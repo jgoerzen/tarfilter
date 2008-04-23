@@ -39,11 +39,12 @@ main =
                                 _ -> usage
        
        inpData <- BSL.getContents
-       
+
        inpcontent_str <- scanInput inpData
        let sizes = convToSize . parseMinusR $ inpcontent_str
 
        procData inpData sizes
+       hPrint stderr (BSL.length inpData)
 
 procData :: BSL.ByteString -> [InputTarSize] -> IO ()
 procData = worker 0 
@@ -51,14 +52,17 @@ worker _ _ [] = return ()
 worker bytesWritten inp (thisSize:xs) =
     case thisSize of
       (fp, Nothing) -> -- Last entry
-          do hPutStrLn stderr $ show bytesWritten ++ "\t" ++ fp
+          do write (BSL.length inp) fp
              BSL.putStr inp
       (fp, Just sz) -> -- Regular entry
-          do hPutStrLn stderr $ show bytesWritten ++ "\t" ++ fp
-             let fullsize = sz * 512
+          do let fullsize = sz * 512
+             write fullsize fp
              let (thiswrite, remainder) = BSL.splitAt fullsize inp
              BSL.putStr thiswrite
              worker (bytesWritten + fullsize) remainder xs
+    where write l fp =
+              hPutStrLn stderr $ show bytesWritten ++ "\t" ++ show l ++ "\t" ++
+                        fp
 
 usage =
     do putStrLn "Usage:\n"
