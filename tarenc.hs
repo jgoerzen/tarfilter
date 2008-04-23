@@ -26,6 +26,7 @@ import System.Environment
 import HSH
 import System.IO
 import Data.Int
+import Data.IORef
 
 type InputTarContent = (Int64, FilePath)
 type InputTarSize = (FilePath, Maybe Int64)
@@ -43,27 +44,44 @@ main =
        inpcontent_str <- scanInput inpData
        let sizes = convToSize . parseMinusR $ inpcontent_str
 
-       procData inpData sizes
+       procData encoder inpData sizes
        hPrint stderr (BSL.length inpData)
 
-procData :: BSL.ByteString -> [InputTarSize] -> IO ()
-procData = worker 0 
-worker _ _ [] = return ()
-worker bytesWritten inp (thisSize:xs) =
+procData :: String -> BSL.ByteString -> [InputTarSize] -> IO ()
+procData encoder = pdworker encoder 0 
+pdworker _ _ _ [] = return ()
+pdworker encoder bytesWritten inp (thisSize:xs) =
     case thisSize of
       (fp, Nothing) -> -- Last entry
-          do write (BSL.length inp) fp
-             BSL.putStr inp
+          do newlen <- writeEncoded inp
+             write newlen fp
       (fp, Just sz) -> -- Regular entry
           do let fullsize = sz * 512
-             write fullsize fp
              let (thiswrite, remainder) = BSL.splitAt fullsize inp
-             BSL.putStr thiswrite
-             worker (bytesWritten + fullsize) remainder xs
+             newlen <- writeEncoded thiswrite
+             write newlen fp
+             pdworker encoder (bytesWritten + newlen) remainder xs
     where write l fp =
               hPutStrLn stderr $ show bytesWritten ++ "\t" ++ show l ++ "\t" ++
                         fp
+          writeEncoded x =
+              do ref <- newIORef 0
+                 runIO $ echoBS x -|- encoder -|- countBytes ref
+                 readIORef ref
 
+countBytes :: IORef Int64 -> BSL.ByteString -> IO BSL.ByteString
+countBytes mv inp = 
+    do byteCount <- worker 0 inp
+       writeIORef mv byteCount
+       return BSL.empty
+    where worker :: Int64 -> BSL.ByteString -> IO Int64
+          worker bytesWritten toWrite
+              | BSL.null toWrite = return bytesWritten
+              | otherwise =
+                  do let (thisChunk, nextChunk) = BSL.splitAt 8192 toWrite
+                     BSL.putStr thisChunk
+                     worker (bytesWritten + BSL.length thisChunk) nextChunk
+           
 usage =
     do putStrLn "Usage:\n"
        putStrLn "tarenc encoder outputoffsetfilename"
