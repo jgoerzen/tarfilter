@@ -24,9 +24,11 @@ import qualified Data.ByteString.Lazy as BSL
 import Text.ParserCombinators.Parsec
 import System.Environment
 import HSH
+import System.IO
+import Data.Int
 
-type InputTarContent = (Integer, FilePath)
-type InputTarSize = (FilePath, Maybe Integer)
+type InputTarContent = (Int64, FilePath)
+type InputTarSize = (FilePath, Maybe Int64)
 
 main :: IO ()
 main = 
@@ -39,10 +41,24 @@ main =
        inpData <- BSL.getContents
        
        inpcontent_str <- scanInput inpData
-       let inpcontent_parsed = parseMinusR inpcontent_str
-       print inpcontent_parsed
-       let inpcontent_sizes = convToSize inpcontent_parsed
-       print inpcontent_sizes
+       let sizes = convToSize . parseMinusR $ inpcontent_str
+
+       procData inpData sizes
+
+procData :: BSL.ByteString -> [InputTarSize] -> IO ()
+procData = worker 0 
+worker _ _ [] = return ()
+worker bytesWritten inp (thisSize:xs) =
+    case thisSize of
+      (fp, Nothing) -> -- Last entry
+          do hPutStrLn stderr $ show bytesWritten ++ "\t" ++ fp
+             BSL.putStr inp
+      (fp, Just sz) -> -- Regular entry
+          do hPutStrLn stderr $ show bytesWritten ++ "\t" ++ fp
+             let fullsize = sz * 512
+             let (thiswrite, remainder) = BSL.splitAt fullsize inp
+             BSL.putStr thiswrite
+             worker (bytesWritten + fullsize) remainder xs
 
 usage =
     do putStrLn "Usage:\n"
