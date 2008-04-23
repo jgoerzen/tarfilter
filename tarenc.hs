@@ -22,12 +22,15 @@ Written by John Goerzen, jgoerzen\@complete.org
 
 import qualified Data.ByteString.Lazy as BSL
 import Text.ParserCombinators.Parsec
+import System.Environment
+import HSH
 
 type InputTarContent = (Integer, FilePath)
+type InputTarSize = (FilePath, Maybe Integer)
 
 main :: IO ()
 main = 
-    do updateGlobalLogger "" (setLevel INFO)
+    do --updateGlobalLogger "" (setLevel INFO)
        argv <- getArgs
        (encoder, offsetfn) <- case argv of
                                 [x, y] -> return (x, y)
@@ -35,21 +38,24 @@ main =
        
        inpData <- BSL.getContents
        
-       inpcontent_str <- scanInput inpfn
+       inpcontent_str <- scanInput inpData
        let inpcontent_parsed = parseMinusR inpcontent_str
-       print inpcontent
+       print inpcontent_parsed
+       let inpcontent_sizes = convToSize inpcontent_parsed
+       print inpcontent_sizes
 
 usage =
     do putStrLn "Usage:\n"
-       putStrLn "tarenv encoder outputoffsetfilename"
+       putStrLn "tarenc encoder outputoffsetfilename"
        putStrLn "input from stdin, output tar file is written to stdout"
        putStrLn "use /dev/null for outputoffsetfilename if you don't want offset info"
+       fail "Usage error"
        
-scanInput :: BSL.ByteString -> String
+scanInput :: BSL.ByteString -> IO String
 scanInput inp =
-    runIO $ echoBS inp -|- ("tar", ["-Rtf", fp])
+    run $ echoBS inp -|- ("tar", ["-Rtf", "-"])
 
-parseMinusR :: String -> InputTarContent
+parseMinusR :: String -> [InputTarContent]
 parseMinusR inp =
     case parse outFile "(stdin)" inp of
       Left x -> fail (show x)
@@ -65,4 +71,9 @@ parseMinusR inp =
                      return (read bn, fn)
           eol = try (string "\r\n" <|> string "\n" <|> string "\r")
           
-          
+convToSize :: [InputTarContent] -> [InputTarSize]
+convToSize (i1:i2:xs) =
+    (snd i1, Just (fst i2 - fst i1)) : convToSize (i2:xs)
+convToSize [i1] = 
+    [(snd i1, Nothing)]
+convToSize [] = []
