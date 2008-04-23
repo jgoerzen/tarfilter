@@ -30,6 +30,7 @@ import Data.Int
 import Data.IORef
 import Control.Monad
 import System.Posix.IO
+import System.Posix.Process
 import Control.Exception(evaluate)
 
 type InputTarContent = (Int64, FilePath)
@@ -46,10 +47,11 @@ main =
        offsetH <- openFile offsetfn WriteMode
        inpData <- BSL.getContents
 
-       inpcontent_str <- scanInput inpData
+       (inpcontent_str, scanr) <- scanInput inpData
        let sizes = convToSize . parseMinusR $ inpcontent_str
 
        procData encoder offsetH inpData sizes
+       scanr >>= checkResults
        hClose offsetH
 
 procData :: String -> Handle -> BSL.ByteString -> [InputTarSize] -> IO ()
@@ -101,7 +103,7 @@ usage =
        putStrLn "use /dev/null for outputoffsetfilename if you don't want offset info"
        fail "Usage error"
        
-scanInput :: BSL.ByteString -> IO String
+scanInput :: BSL.ByteString -> IO (String, IO (String, ProcessStatus))
 scanInput inp =
     run $ echoBS inp -|- ("tar", ["-Rtf", "-"])
 
