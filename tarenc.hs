@@ -28,6 +28,9 @@ import HSH
 import System.IO
 import Data.Int
 import Data.IORef
+import Control.Monad
+import System.Posix.IO
+import Control.Exception(evaluate)
 
 type InputTarContent = (Int64, FilePath)
 type InputTarSize = (FilePath, Maybe Int64)
@@ -65,24 +68,28 @@ pdworker encoder bytesWritten inp (thisSize:xs) =
              newlen <- writeEncoded thiswrite
              write newlen fp
              pdworker encoder (bytesWritten + newlen) remainder xs
-    where write l fp =
+    where write :: Int64 -> FilePath -> IO ()
+          write l fp =
               hPutStrLn stderr $ show bytesWritten ++ "\t" ++ show l ++ "\t" ++
                         fp
           writeEncoded x =
-              do ref <- newIORef 5
-                 hPutStrLn stderr $ "writeEncoded: x is size " ++ show (BSL.length x)
-                 runIO $ echoBS x -|- encoder -|- countBytes ref
-                 retval <- readIORef ref
-                 hPutStrLn stderr $ "writeEncoded: compressed size " ++ show retval
-                 return retval
+              do aliasFd <- dup 1
+                 aliasH <- fdToHandle aliasFd
+                 count <- run $ echoBS x -|- encoder -|- countBytes aliasH
+                 hClose aliasH
+                 return (read count)
 
-countBytes :: IORef Int64 -> BSL.ByteString -> IO BSL.ByteString
-countBytes mv inp = 
-    do chunks <- mapM updSize (BSL.toChunks inp)
-       return (BSL.fromChunks chunks)
-    where updSize c =
-              do modifyIORef mv (\x -> x + (fromIntegral (BS.length c)))
-                 return c
+countBytes :: Handle -> BSL.ByteString -> IO BSL.ByteString
+countBytes h inp = 
+    do size <- foldM updSize 0 (BSL.toChunks inp)
+       let retval = BSL.pack . map (fromIntegral . fromEnum) . show $ size
+       evaluate (BSL.length retval)
+       hClose h
+       return retval
+       
+    where updSize accum c =
+              do BS.hPutStr h c
+                 return (accum + (fromIntegral . BS.length $ c))
            
 usage =
     do putStrLn "Usage:\n"
