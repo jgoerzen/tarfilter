@@ -56,20 +56,16 @@ scanInput inp =
     run $ echoBS inp -|- ("tar", ["-Rtf", "-"])
 
 parseMinusR :: String -> [InputTarContent]
-parseMinusR inp =
-    case parse outFile "(stdin)" inp of
-      Left x -> fail (show x)
-      Right y -> y
-    where outFile = do r <- many1 entry
-                       eof
-                       return r
+parseMinusR = map procLine . lines
+    where procLine l = case parse entry ("Line: " ++ show l) l of
+                         Left x -> error (show x)
+                         Right y -> y
           entry = do string "block "
                      bn <- many1 digit
                      string ": "
                      fn <- many1 (noneOf "\n\r")
-                     eol
+                     eof
                      return (read bn, fn)
-          eol = try (string "\r\n" <|> string "\n" <|> string "\r")
           
 convToSize :: [InputTarContent] -> [InputTarSize]
 convToSize (i1:i2:xs) =
