@@ -21,6 +21,7 @@ Written by John Goerzen, jgoerzen\@complete.org
 -}
 
 import qualified Data.ByteString.Lazy as BSL
+import qualified Data.ByteString as BS
 import Text.ParserCombinators.Parsec
 import System.Environment
 import HSH
@@ -49,6 +50,8 @@ main =
 
 procData :: String -> BSL.ByteString -> [InputTarSize] -> IO ()
 procData encoder = pdworker encoder 0 
+
+pdworker :: String -> Int64 -> BSL.ByteString -> [InputTarSize] -> IO ()
 pdworker _ _ _ [] = return ()
 pdworker encoder bytesWritten inp (thisSize:xs) =
     case thisSize of
@@ -56,7 +59,8 @@ pdworker encoder bytesWritten inp (thisSize:xs) =
           do newlen <- writeEncoded inp
              write newlen fp
       (fp, Just sz) -> -- Regular entry
-          do let fullsize = sz * 512
+          do hPutStrLn stderr $ "pdworker: got Just " ++ show fp ++ ", " ++ show sz
+             let fullsize = sz * 512
              let (thiswrite, remainder) = BSL.splitAt fullsize inp
              newlen <- writeEncoded thiswrite
              write newlen fp
@@ -65,22 +69,20 @@ pdworker encoder bytesWritten inp (thisSize:xs) =
               hPutStrLn stderr $ show bytesWritten ++ "\t" ++ show l ++ "\t" ++
                         fp
           writeEncoded x =
-              do ref <- newIORef 0
-                 runIO $ echoBS x -|- encoder -- -|- countBytes ref
-                 readIORef ref
+              do ref <- newIORef 5
+                 hPutStrLn stderr $ "writeEncoded: x is size " ++ show (BSL.length x)
+                 runIO $ echoBS x -|- encoder -|- countBytes ref
+                 retval <- readIORef ref
+                 hPutStrLn stderr $ "writeEncoded: compressed size " ++ show retval
+                 return retval
 
 countBytes :: IORef Int64 -> BSL.ByteString -> IO BSL.ByteString
 countBytes mv inp = 
-    do byteCount <- worker 0 inp
-       writeIORef mv byteCount
-       return BSL.empty
-    where worker :: Int64 -> BSL.ByteString -> IO Int64
-          worker bytesWritten toWrite
-              | BSL.null toWrite = return bytesWritten
-              | otherwise =
-                  do let (thisChunk, nextChunk) = BSL.splitAt 8192 toWrite
-                     BSL.putStr thisChunk
-                     worker (bytesWritten + BSL.length thisChunk) nextChunk
+    do chunks <- mapM updSize (BSL.toChunks inp)
+       return (BSL.fromChunks chunks)
+    where updSize c =
+              do modifyIORef mv (\x -> x + (fromIntegral (BS.length c)))
+                 return c
            
 usage =
     do putStrLn "Usage:\n"
