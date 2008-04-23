@@ -43,37 +43,40 @@ main =
                                 [x, y] -> return (x, y)
                                 _ -> usage
        
+       offsetH <- openFile offsetfn WriteMode
        inpData <- BSL.getContents
 
        inpcontent_str <- scanInput inpData
        let sizes = convToSize . parseMinusR $ inpcontent_str
 
-       procData encoder inpData sizes
-       hPrint stderr (BSL.length inpData)
+       procData encoder offsetH inpData sizes
+       hClose offsetH
 
-procData :: String -> BSL.ByteString -> [InputTarSize] -> IO ()
-procData encoder = pdworker encoder 0 
+procData :: String -> Handle -> BSL.ByteString -> [InputTarSize] -> IO ()
+procData encoder offseth = pdworker encoder offseth 0 
 
-pdworker :: String -> Int64 -> BSL.ByteString -> [InputTarSize] -> IO ()
-pdworker _ _ _ [] = return ()
-pdworker encoder bytesWritten inp (thisSize:xs) =
+pdworker :: String -> Handle -> Int64 -> BSL.ByteString -> [InputTarSize] -> IO ()
+pdworker _ _ _ _ [] = return ()
+pdworker encoder offseth bytesWritten inp (thisSize:xs) =
     case thisSize of
       (fp, Nothing) -> -- Last entry
           do newlen <- writeEncoded inp
              write newlen fp
       (fp, Just sz) -> -- Regular entry
-          do hPutStrLn stderr $ "pdworker: got Just " ++ show fp ++ ", " ++ show sz
-             let fullsize = sz * 512
+          do let fullsize = sz * 512
              let (thiswrite, remainder) = BSL.splitAt fullsize inp
              newlen <- writeEncoded thiswrite
              write newlen fp
-             pdworker encoder (bytesWritten + newlen) remainder xs
+             pdworker encoder offseth (bytesWritten + newlen) remainder xs
     where write :: Int64 -> FilePath -> IO ()
           write l fp =
-              hPutStrLn stderr $ show bytesWritten ++ "\t" ++ show l ++ "\t" ++
+              hPutStrLn offseth $ show bytesWritten ++ "\t" ++ show l ++ "\t" ++
                         fp
           writeEncoded x =
-              do aliasFd <- dup 1
+              do -- Ugly hack.  stdout fd 1 is messed with by the pipe.  We
+                 -- dup it so we can write directly out AND return a byte
+                 -- count.
+                 aliasFd <- dup 1
                  aliasH <- fdToHandle aliasFd
                  count <- run $ echoBS x -|- encoder -|- countBytes aliasH
                  hClose aliasH
