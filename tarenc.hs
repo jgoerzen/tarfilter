@@ -66,7 +66,7 @@ pdworker encoder bytesWritten inp (thisSize:xs) =
                         fp
           writeEncoded x =
               do ref <- newIORef 0
-                 runIO $ echoBS x -|- encoder -|- countBytes ref
+                 runIO $ echoBS x -|- encoder -- -|- countBytes ref
                  readIORef ref
 
 countBytes :: IORef Int64 -> BSL.ByteString -> IO BSL.ByteString
