@@ -203,7 +203,7 @@ void forkencoder(struct mypipes *pipes, char *encoder) {
       dup2(pipes->toencoder_r, 0);
       close(pipes->toencoder_r);
 
-      checkerror("exec encoder", execl("/bin/sh", "-c", encoder, NULL));
+      checkerror("exec encoder", execl("/bin/sh", "/bin/sh", "-c", encoder, NULL));
     }
   } else {                      /* Counter */
     close(pipes->toencoder_r);
@@ -225,7 +225,7 @@ void forkencoder(struct mypipes *pipes, char *encoder) {
       }
     }
     writereport = fdopen(pipes->countreport_w, "wt");
-    fprintf(writereport, "%" PRId64, bytecount);
+    fprintf(writereport, "%" PRId64 "\n", bytecount);
     fclose(writereport);
     exit(0);
   } /* Counter */
@@ -245,7 +245,7 @@ off_t closepipes(struct mypipes *pipes) {
   if (scanfresult == EOF) {
     errorexit("scanf reader");
   } else {
-    if (scanfresult != 0) {
+    if (scanfresult != 1) {
       fprintf(stderr, "Got unexpected scanf result: %d\n", scanfresult);
       exit(6);
     }
