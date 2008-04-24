@@ -7,6 +7,8 @@
 #include <stdlib.h>
 #include <unistd.h>
 
+#define TARENC_BUFSIZE 1
+
 struct mydata {
   const char *name;
   int fd;
@@ -26,8 +28,8 @@ int main(void) {
 }
   
 void checkblock(off_t offset) {
-  if (offset % 512 != 0) {
-    printf("\nWARNING: offset %" PRId64 " is not a multiple of 512!\n", offset);
+  if (offset % TARENC_BUFSIZE != 0) {
+    printf("\nWARNING: offset %" PRId64 " is not a multiple of %d!\n", offset, TARENC_BUFSIZE);
   }
 }
 
@@ -38,6 +40,8 @@ list_archive(void)
   struct archive *a;
   struct archive_entry *entry;
   off_t startingoffset;
+  void *tmpbuf;
+  int firstpass = 0;
 
   mydata = malloc(sizeof(struct mydata));
   a = archive_read_new();
@@ -46,18 +50,21 @@ list_archive(void)
   archive_read_support_format_tar(a);
   archive_read_open(a, mydata, myopenstdin, myread, myclose);
   while (1) {
-    printf("block %" PRId64 ": ", mydata->offset / 512);
+    printf("block %" PRId64 ": ", mydata->offset / TARENC_BUFSIZE);
     checkblock(mydata->offset);
     startingoffset = mydata->offset;
     if (archive_read_next_header(a, &entry) != ARCHIVE_OK) {
+      printf("** Block of NULs **\n");
+      while (myread(a, mydata, &tmpbuf)) {};
+      printf("  + hdr blocks: %" PRId64 "\n", (mydata->offset - startingoffset / TARENC_BUFSIZE));
       break;
     }
     printf("%s\n",archive_entry_pathname(entry));
-    printf("  + hdr blocks: %" PRId64, (mydata->offset - startingoffset) / 512);
+    printf("  + hdr blocks: %" PRId64, (mydata->offset - startingoffset) / TARENC_BUFSIZE);
     checkblock(mydata->offset);
     startingoffset = mydata->offset;
     archive_read_data_skip(a);
-    printf(", + data blocks: %" PRId64 "\n", (mydata->offset - startingoffset) / 512);
+    printf(", + data blocks: %" PRId64 "\n", (mydata->offset - startingoffset) / TARENC_BUFSIZE);
     checkblock(mydata->offset);
   }
   archive_read_finish(a);
@@ -70,13 +77,13 @@ myread(struct archive *a, void *client_data, const void **buff)
   struct mydata *mydata = client_data;
   ssize_t bytesread = 0, thisread;
 
-  /* Try really hard to get things in exactly 512 bytes. */
+  /* Try really hard to get things in exactly TARENC_BUFSIZE bytes. */
 
   *buff = mydata->buff;
 
-  while (bytesread < 512) {
+  while (bytesread < TARENC_BUFSIZE) {
     thisread = read(mydata->fd, mydata->buff + bytesread, 
-                    512 - bytesread);
+                    TARENC_BUFSIZE - bytesread);
     if (thisread < 0) {
       return(thisread);
     }
