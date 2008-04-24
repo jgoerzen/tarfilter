@@ -7,7 +7,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 
-#define TARENC_BUFSIZE 1
+#define TARENC_BUFSIZE 512
 
 struct mydata {
   const char *name;
@@ -41,7 +41,9 @@ list_archive(void)
   struct archive_entry *entry;
   off_t startingoffset;
   void *tmpbuf;
-  int firstpass = 0;
+
+  /* libarchive seems to read one block at open; special case this */
+  int offsetcorrection = TARENC_BUFSIZE;
 
   mydata = malloc(sizeof(struct mydata));
   a = archive_read_new();
@@ -50,17 +52,21 @@ list_archive(void)
   archive_read_support_format_tar(a);
   archive_read_open(a, mydata, myopenstdin, myread, myclose);
   while (1) {
-    printf("block %" PRId64 ": ", mydata->offset / TARENC_BUFSIZE);
+    printf("block %" PRId64 ": ", 
+           (mydata->offset - offsetcorrection) / TARENC_BUFSIZE);
     checkblock(mydata->offset);
     startingoffset = mydata->offset;
     if (archive_read_next_header(a, &entry) != ARCHIVE_OK) {
       printf("** Block of NULs **\n");
       while (myread(a, mydata, &tmpbuf)) {};
-      printf("  + hdr blocks: %" PRId64 "\n", (mydata->offset - startingoffset / TARENC_BUFSIZE));
+      printf("  + hdr blocks: %" PRId64 "\n", 
+             (mydata->offset - offsetcorrection - startingoffset / TARENC_BUFSIZE));
       break;
     }
     printf("%s\n",archive_entry_pathname(entry));
-    printf("  + hdr blocks: %" PRId64, (mydata->offset - startingoffset) / TARENC_BUFSIZE);
+    printf("  + hdr blocks: %" PRId64, 
+           (mydata->offset + offsetcorrection - startingoffset) / TARENC_BUFSIZE);
+    offsetcorrection = 0;
     checkblock(mydata->offset);
     startingoffset = mydata->offset;
     archive_read_data_skip(a);
