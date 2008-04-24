@@ -41,38 +41,36 @@ main :: IO ()
 main = brackettmpdir "tarenc-encoder.XXXXXX" $ \tmpdir -> do
     do --updateGlobalLogger "" (setLevel INFO)
        argv <- getArgs
-       (tarblockfn, encoder, offsetfn) <- case argv of
+       (tardatafn, encoder, offsetfn) <- case argv of
                                 [x, y, z] -> return (x, y, z)
                                 _ -> usage
        
        offsetH <- openFile offsetfn WriteMode
-       blockDataH <- openFile tarblockfn ReadMode
-       hSetBuffering blockDataH LineBuffering
-
-       blockData <- hGetContents blockDataH
-
-       hSetBuffering stdin (BlockBuffering (Just 512))
+       tarDataH <- openFile tardatafn ReadMode
+       tarData <- BSL.readFile tardatafn
+       hSetBuffering stdin LineBuffering
+       blockData <- getContents
        let sizes = convToSize . parseMinusR $ blockData
 
-       procData tmpdir encoder offsetH sizes
+       procData tmpdir encoder offsetH tarData sizes
        hClose offsetH
 
-procData :: FilePath -> String -> Handle -> [InputTarSize] -> IO ()
+procData :: FilePath -> String -> Handle -> BSL.ByteString -> [InputTarSize] -> IO ()
 procData tmpdir encoder offseth = 
     pdworker (tmpdir ++ "/sizefn") encoder offseth 0 
 
-pdworker :: FilePath -> String -> Handle -> Int64 -> [InputTarSize] -> IO ()
-pdworker _ _ _ _ [] = return ()
-pdworker sizefp encoder offseth bytesWritten (thisSize:xs) =
+pdworker :: FilePath -> String -> Handle -> Int64 -> BSL.ByteString -> [InputTarSize] -> IO ()
+pdworker _ _ _ _ _ [] = return ()
+pdworker sizefp encoder offseth bytesWritten inp (thisSize:xs) =
     case thisSize of
       (fp, Nothing) -> -- Last entry
-          do newlen <- writeEncoded Nothing
+          do newlen <- writeEncoded inp
              write newlen fp
       (fp, Just sz) -> -- Regular entry
           do let fullsize = sz * 512
              newlen <- writeEncoded (Just (fromIntegral fullsize))
              write newlen fp
-             pdworker sizefp encoder offseth (bytesWritten + newlen) xs
+             pdworker sizefp encoder offseth (bytesWritten + newlen) remainder xs
     where write :: Int64 -> FilePath -> IO ()
           write l fp =
               hPutStrLn offseth $ show bytesWritten ++ "\t" ++ show l ++ "\t" ++
@@ -108,9 +106,8 @@ countBytes fp inp =
 usage :: IO a
 usage =
     do putStrLn "Usage:\n"
-       putStrLn "tarenc-encoder tarblockfifopath encoder outputoffsetfilename"
-       putStrLn "input tar from stdin, output tar file is written to stdout"
-       putStrLn "block list expected at tarblockfifopath"
+       putStrLn "tarenc-encoder tardatafifopath encoder outputoffsetfilename"
+       putStrLn "input from stdin, output tar file is written to stdout"
        putStrLn "use /dev/null for outputoffsetfilename if you don't want offset info"
        fail "Usage error"
        
