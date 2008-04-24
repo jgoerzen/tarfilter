@@ -40,18 +40,16 @@ main :: IO ()
 main = 
     do --updateGlobalLogger "" (setLevel INFO)
        argv <- getArgs
-       (encoder, offsetfn) <- case argv of
-                                [x, y] -> return (x, y)
+       (tardatafn, encoder, offsetfn) <- case argv of
+                                [x, y, z] -> return (x, y, z)
                                 _ -> usage
        
        offsetH <- openFile offsetfn WriteMode
-       inpData <- BSL.getContents
+       tarData <- BSL.readFile tardatafn
+       blockData <- getContents
+       let sizes = convToSize . parseMinusR $ blockData
 
-       (inpcontent_str, scanr) <- scanInput inpData
-       let sizes = convToSize . parseMinusR $ inpcontent_str
-
-       procData encoder offsetH inpData sizes
-       scanr >>= checkResults
+       procData encoder offsetH tarData sizes
        hClose offsetH
 
 procData :: String -> Handle -> BSL.ByteString -> [InputTarSize] -> IO ()
@@ -98,15 +96,11 @@ countBytes h inp =
            
 usage =
     do putStrLn "Usage:\n"
-       putStrLn "tarenc encoder outputoffsetfilename"
+       putStrLn "tarenc-encoder tardatafifopath encoder outputoffsetfilename"
        putStrLn "input from stdin, output tar file is written to stdout"
        putStrLn "use /dev/null for outputoffsetfilename if you don't want offset info"
        fail "Usage error"
        
-scanInput :: BSL.ByteString -> IO (String, IO (String, ProcessStatus))
-scanInput inp =
-    run $ echoBS inp -|- ("tar", ["-Rtf", "-"])
-
 parseMinusR :: String -> [InputTarContent]
 parseMinusR = map procLine . lines
     where procLine l = case parse entry ("Line: " ++ show l) l of
