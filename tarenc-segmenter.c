@@ -25,9 +25,9 @@ struct mypipes {
   int toencoder_w;
   int countreport_r;
   int countreport_w;
-  int encoder_pid;
-  int counter_pid;
-}
+  int encoderpid;
+  int counterpid;
+};
 
 void convert_archive(char *encoder, FILE *offsetf);
 int myopenstdin(struct archive *a, void *client_data);
@@ -35,12 +35,12 @@ int myclose(struct archive *a, void *client_data);
 ssize_t myread(struct archive *a, void *client_data, const void **buff);
 void checkblock(off_t offset);
 void errorexit(char *msg);
-int checkerror(int code, char *msg);
+int checkerror(char *msg, int code);
 void initpipes(struct mypipes *pipes);
 off_t closepipes(struct mypipes *pipes);
 void forkencoder(struct mypipes *pipes, char *encoder);
 
-int main(int argc, char *argv) {
+int main(int argc, char **argv) {
   FILE *offsetf;
   if (argc != 3) {
     printf("Usage:\n");
@@ -63,7 +63,7 @@ void errorexit(char *msg) {
   exit(5);
 }
   
-int checkerror(int code, char *msg) {
+int checkerror(char *msg, int code) {
   if (code < 0) {
     errorexit(msg);
   }
@@ -85,8 +85,7 @@ void convert_archive(char *encoder, FILE *offsetf)
   struct archive_entry *entry;
   off_t startingoffset, cmpsize;
   const void *tmpbuf;
-  pid_t encoderpid, counterpid;
-  char *filename;
+  const char *filename;
 
   /* libarchive seems to read one block at open; special case this */
   int offsetcorrection = TARENC_BUFSIZE;
@@ -120,7 +119,6 @@ void convert_archive(char *encoder, FILE *offsetf)
 
     checkblock(mydata->offset);
     startingoffset = mydata->offset - offsetcorrection;
-    startingcmpoffset = mydata->cmpoffset;
 
     if (archive_read_next_header(a, &entry) != ARCHIVE_OK) {
       filename = "** Block of NULs **";
@@ -150,7 +148,8 @@ void convert_archive(char *encoder, FILE *offsetf)
 
     fprintf(offsetf, "%" PRId64 "\t%" PRId64 "\t%s\n",
             mydata->offset - startingoffset,
-            mydata->cmpoffset 
+            cmpsize, filename);
+    mydata->cmpoffset += cmpsize;
   }
   archive_read_finish(a);
   free(mydata);
@@ -159,11 +158,11 @@ void convert_archive(char *encoder, FILE *offsetf)
 void initpipes(struct mypipes *pipes) {
   int filedes[2];
   
-  checkerror(pipe(filedes), "initpipes");
+  checkerror("initpipes", pipe(filedes));
   pipes->toencoder_r = filedes[0];
   pipes->toencoder_w = filedes[1];
 
-  checkerror(pipe(filedes), "initpipes");
+  checkerror("initpipes", pipe(filedes));
   pipes->countreport_r = filedes[0];
   pipes->countreport_w = filedes[1];
 }
@@ -178,13 +177,13 @@ void forkencoder(struct mypipes *pipes, char *encoder) {
   FILE *writereport;
 
   // Set up pipe for communication between encoder and counter
-  checkerror(pipe(newfiledes));
+  checkerror("forkencoder pipe", pipe(newfiledes));
     
-  counterpid = checkerror(fork());
+  counterpid = checkerror("fork counter", fork());
   if (counterpid > 0) {           /* Main parent */
     pipes->counterpid = counterpid;
 
-    encoderpid = checkerror(fork());
+    encoderpid = checkerror("fork encoder", fork());
     if (encoderpid > 0) {       /* Main parent continued */
       pipes->encoderpid = encoderpid;
 
@@ -204,7 +203,7 @@ void forkencoder(struct mypipes *pipes, char *encoder) {
       dup2(pipes->toencoder_r, 0);
       close(pipes->toencoder_r);
 
-      checkerror(execl("/bin/sh", "-c", encoder));
+      checkerror("exec encoder", execl("/bin/sh", "-c", encoder, NULL));
     }
   } else {                      /* Counter */
     close(pipes->toencoder_r);
@@ -213,14 +212,16 @@ void forkencoder(struct mypipes *pipes, char *encoder) {
     close(newfiledes[1]);
     
     while (1) {               /* there is data to read */
-      readcount = checkerror(read(newfiledes[0], buff, TARENC_BUFSIZE));
+      readcount = checkerror("counter read",
+                             read(newfiledes[0], buff, TARENC_BUFSIZE));
       if (readcount == 0) {
         break;
       }
       bytecount += (off_t) readcount;
       writecount = 0;
       while (readcount > writecount) {
-        writecount += checkerror((int) write(1, buff + writecount, readcount - writecount));
+        writecount += checkerror("counter write",
+                                 (int) write(1, buff + writecount, readcount - writecount));
       }
     }
     writereport = fdopen(pipes->countreport_w, "wt");
@@ -231,7 +232,6 @@ void forkencoder(struct mypipes *pipes, char *encoder) {
 }
 
 off_t closepipes(struct mypipes *pipes) {
-  char buff[1024];
   FILE *reader;
   int scanfresult;
   off_t retval;
@@ -255,8 +255,8 @@ off_t closepipes(struct mypipes *pipes) {
   // handled by fclose above: close(pipes->toencoder_w);
   // handled by fclose(reader): close(pipes->countreport_r);
 
-  waitpid(pipes->encoder_pid, NULL, 0);
-  waitpid(pipes->counter_pid, NULL, 0);
+  waitpid(pipes->encoderpid, NULL, 0);
+  waitpid(pipes->counterpid, NULL, 0);
   return retval;
 }
   
