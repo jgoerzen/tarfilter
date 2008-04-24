@@ -27,10 +27,8 @@ import System.Environment
 import HSH
 import System.IO
 import Data.Int
-import Data.IORef
 import Control.Monad
 import System.Posix.IO
-import System.Posix.Process
 import Control.Exception(evaluate)
 
 type InputTarContent = (Int64, FilePath)
@@ -78,13 +76,13 @@ pdworker encoder offseth bytesWritten inp (thisSize:xs) =
                  -- count.
                  aliasFd <- dup 1
                  aliasH <- fdToHandle aliasFd
-                 count <- run $ echoBS x -|- encoder -|- countBytes aliasH
+                 countStr <- run $ echoBS x -|- encoder -|- countBytes aliasH
                  hClose aliasH
-                 return (read count)
+                 return (read countStr)
 
 countBytes :: Handle -> BSL.ByteString -> IO BSL.ByteString
 countBytes h inp = 
-    do size <- foldM updSize 0 (BSL.toChunks inp)
+    do size <- foldM updSize (0::Int64) (BSL.toChunks inp)
        let retval = BSL.pack . map (fromIntegral . fromEnum) . show $ size
        evaluate (BSL.length retval)
        hClose h
@@ -94,6 +92,7 @@ countBytes h inp =
               do BS.hPutStr h c
                  return (accum + (fromIntegral . BS.length $ c))
            
+usage :: IO a
 usage =
     do putStrLn "Usage:\n"
        putStrLn "tarenc-encoder tardatafifopath encoder outputoffsetfilename"
