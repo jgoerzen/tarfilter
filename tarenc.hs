@@ -37,7 +37,7 @@ type InputTarContent = (Int64, FilePath)
 type InputTarSize = (FilePath, Maybe Int64)
 
 main :: IO ()
-main = 
+main = brackettmpdir "tarenc.XXXXXX" $ \tmpdir ->
     do --updateGlobalLogger "" (setLevel INFO)
        argv <- getArgs
        (encoder, offsetfn) <- case argv of
@@ -45,21 +45,31 @@ main =
                                 _ -> usage
        
        offsetH <- openFile offsetfn WriteMode
-       inpData <- BSL.getContents
 
-       (inpcontent_str, scanr) <- scanInput inpData
-       let sizes = convToSize . parseMinusR $ inpcontent_str
+       let pipefn = tmpdir ++ "/datapipe"
+       createNamedPipe pipefn 0o600
 
-       procData encoder offsetH inpData sizes
-       scanr >>= checkResults
+       runIO $ teeFIFOBS [pipefn] -|- ("tar", ["-Rtf", "-"]) -|- 
+               procData encoder pipefn offsetH
        hClose offsetH
 
-procData :: String -> Handle -> BSL.ByteString -> [InputTarSize] -> IO ()
-procData encoder offseth = pdworker encoder offseth 0 
+procData :: String              -- ^ Encoder command
+         -> FilePath            -- ^ Name of FIFO for actual tar data
+         -> Handle              -- ^ Handle to write offset data back to
+         -> BSL.ByteString      -- ^ Tar data
+         -> IO BSL.ByteString   -- ^ Resulting compressed data
+
+procData encoder tardatafn offseth tardata = 
+    do h <- openFile tardatafn ReadMode
+       c <- BSL.hGetContents h
+       chunks <- pdworker encoder offseth 0 c sizes
+       return . BSL.fromChunks chunks
+    where sizes = convToSize . parseMinusR . 
+                       map (fromIntegral . fromEnum) (BSL.unpack tardata)
 
 pdworker :: String -> Handle -> Int64 -> BSL.ByteString -> [InputTarSize] -> IO ()
-pdworker _ _ _ _ [] = return ()
-pdworker encoder offseth bytesWritten inp (thisSize:xs) =
+pdworker _ _ _ _ _ [] = return [BS.empty]
+pdworker encoder offseth bytesWritten inp (thisSize:xs) = unsafeInterleaveIO $
     case thisSize of
       (fp, Nothing) -> -- Last entry
           do newlen <- writeEncoded inp
