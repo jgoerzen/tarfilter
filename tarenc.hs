@@ -20,22 +20,11 @@ Written by John Goerzen, jgoerzen\@complete.org
 
 -}
 
-import qualified Data.ByteString.Lazy as BSL
-import qualified Data.ByteString as BS
-import Text.ParserCombinators.Parsec
 import System.Environment
 import HSH
 import System.IO
-import Data.Int
-import Data.IORef
 import Control.Monad
-import System.Posix.IO
-import System.Posix.Process
-import Control.Exception(evaluate)
 import System.Path
-
-type InputTarContent = (Int64, FilePath)
-type InputTarSize = (FilePath, Maybe Int64)
 
 main :: IO ()
 main = brackettmpdir "tarenc.XXXXXX" $ \tmpdir ->
@@ -54,6 +43,7 @@ main = brackettmpdir "tarenc.XXXXXX" $ \tmpdir ->
        runIO $ (pnbase ++ "/tarenc-scanner", [fifopath]) -|-
                (pnbase ++ "/tarenc-encoder", [fifopath, encoder, offsetfn])
            
+usage :: IO a
 usage =
     do putStrLn "Usage:\n"
        putStrLn "tarenc encoder outputoffsetfilename"
