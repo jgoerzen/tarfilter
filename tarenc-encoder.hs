@@ -82,7 +82,7 @@ pdworker sizefp encoder offseth bytesWritten (thisSize:xs) =
                    Nothing -> return ()
                    Just x -> do evaluate x
                                 return ()
-                 runIO $ echoBytes 512 size -|- encoder -|- countBytes sizefp
+                 runIO $ catBytes 512 size -|- encoder -|- countBytes sizefp
                  -- BSL.putStr x
                  countStr <- readFile sizefp
                  -- let countStr = "0"
