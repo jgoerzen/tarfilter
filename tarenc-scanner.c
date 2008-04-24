@@ -40,7 +40,7 @@ list_archive(void)
   struct archive *a;
   struct archive_entry *entry;
   off_t startingoffset;
-  void *tmpbuf;
+  const void *tmpbuf;
 
   /* libarchive seems to read one block at open; special case this */
   int offsetcorrection = TARENC_BUFSIZE;
@@ -101,16 +101,6 @@ myread(struct archive *a, void *client_data, const void **buff)
                
   mydata->offset += (off_t) bytesread;
   return(bytesread);
-}
-
-int
-myopen(struct archive *a, void *client_data)
-{
-  struct mydata *mydata = client_data;
-
-  mydata->fd = open(mydata->name, O_RDONLY);
-  mydata->offset = 0;
-  return (mydata->fd >= 0 ? ARCHIVE_OK : ARCHIVE_FATAL);
 }
 
 int
