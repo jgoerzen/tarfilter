@@ -9,7 +9,7 @@ hugsbuild: setup
 	./setup configure --hugs
 	./setup build
 
-setup: Setup.lhs datapacker.cabal
+setup: Setup.lhs tarfilter.cabal
 	ghc -package Cabal Setup.lhs -o setup
 
 doc: man html pdf txt

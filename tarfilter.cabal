@@ -27,13 +27,15 @@ Description: datapacker is a tool to group files by size. It is
  pipes and call other tools.
 
 Build-Depends: unix, MissingH>=1.0.1, mtl, base, filepath, directory,
-               hslogger, process, HSH
+               hslogger, process, HSH, parsec, bytestring
 
 Executable: tarenc
 Main-Is: tarenc.hs
+GHC-Options: -O2 -Wall
    
 Executable: tarenc-scanner
 Main-Is: tarencscanner.hs
+GHC-Options: -O2 -Wall
 
 Executable: tarenc-encoder
 Main-Is: tarencencoder.hs
