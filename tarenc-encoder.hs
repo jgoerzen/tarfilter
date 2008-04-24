@@ -46,6 +46,7 @@ main = brackettmpdir "tarenc-encoder.XXXXXX" $ \tmpdir -> do
                                 _ -> usage
        
        offsetH <- openFile offsetfn WriteMode
+       tarDataH <- openFile tardatafn ReadMode
        tarData <- BSL.readFile tardatafn
        hSetBuffering stdin LineBuffering
        blockData <- getContents
