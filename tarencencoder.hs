@@ -30,12 +30,15 @@ import Data.Int
 import Control.Monad
 import System.Posix.IO
 import Control.Exception(evaluate)
+import Data.IORef
+import System.Path
+import System.IO.Unsafe(unsafeInterleaveIO)
 
 type InputTarContent = (Int64, FilePath)
 type InputTarSize = (FilePath, Maybe Int64)
 
 main :: IO ()
-main = 
+main = brackettmpdir "tarenc-encoder.XXXXXX" $ \tmpdir -> do
     do --updateGlobalLogger "" (setLevel INFO)
        argv <- getArgs
        (tardatafn, encoder, offsetfn) <- case argv of
@@ -47,15 +50,16 @@ main =
        blockData <- getContents
        let sizes = convToSize . parseMinusR $ blockData
 
-       procData encoder offsetH tarData sizes
+       procData tmpdir encoder offsetH tarData sizes
        hClose offsetH
 
-procData :: String -> Handle -> BSL.ByteString -> [InputTarSize] -> IO ()
-procData encoder offseth = pdworker encoder offseth 0 
+procData :: FilePath -> String -> Handle -> BSL.ByteString -> [InputTarSize] -> IO ()
+procData tmpdir encoder offseth = 
+    pdworker (tmpdir ++ "/sizefn") encoder offseth 0 
 
-pdworker :: String -> Handle -> Int64 -> BSL.ByteString -> [InputTarSize] -> IO ()
-pdworker _ _ _ _ [] = return ()
-pdworker encoder offseth bytesWritten inp (thisSize:xs) =
+pdworker :: FilePath -> String -> Handle -> Int64 -> BSL.ByteString -> [InputTarSize] -> IO ()
+pdworker _ _ _ _ _ [] = return ()
+pdworker sizefp encoder offseth bytesWritten inp (thisSize:xs) =
     case thisSize of
       (fp, Nothing) -> -- Last entry
           do newlen <- writeEncoded inp
@@ -65,44 +69,34 @@ pdworker encoder offseth bytesWritten inp (thisSize:xs) =
              let (thiswrite, remainder) = BSL.splitAt fullsize inp
              newlen <- writeEncoded thiswrite
              write newlen fp
-             pdworker encoder offseth (bytesWritten + newlen) remainder xs
+             pdworker sizefp encoder offseth (bytesWritten + newlen) remainder xs
     where write :: Int64 -> FilePath -> IO ()
           write l fp =
               hPutStrLn offseth $ show bytesWritten ++ "\t" ++ show l ++ "\t" ++
                         fp
           writeEncoded x =
-              do -- Ugly hack.  stdout fd 1 is messed with by the pipe.  We
-                 -- dup it so we can write directly out AND return a byte
-                 -- count.
-                 aliasFd' <- dup 1
-                 -- Even uglier: when dup returns 0, it confuses the heck out
-                 -- of HSH.
-                 aliasFd <- case aliasFd' of
-                              0 -> do newFd <- dup 1
-                                      closeFd 0
-                                      return newFd
-                              y -> return y
-
-                 -- hPutStrLn stderr $ "writeEncoded: fds " ++ show aliasFd
-                 aliasH <- fdToHandle aliasFd
-                 countStr <- run $ echoBS x -|- encoder -|- countBytes aliasH
-                 hClose aliasH
+              do runIO $ echoBS x -|- encoder -|- countBytes sizefp
+                 countStr <- readFile sizefp
+                 -- let countStr = "0"
                  -- hPutStrLn stderr $ "writeEncoded: got " ++ show countStr
                  return (read countStr)
 
-countBytes :: Handle -> BSL.ByteString -> IO BSL.ByteString
-countBytes h inp = 
-    do size <- foldM updSize (0::Int64) (BSL.toChunks inp)
-       let retval = BSL.pack . map (fromIntegral . fromEnum) . show $ size
-       evaluate (BSL.length retval)
-       hClose h
-       return retval
-       
-    where updSize accum c =
-              do 
-                 BS.hPutStr h c
-                 return (accum + (fromIntegral . BS.length $ c))
-           
+countBytes :: FilePath -> BSL.ByteString -> IO BSL.ByteString
+countBytes fp inp = 
+    do let chunks = BSL.toChunks inp
+       ref <- ((newIORef 0) :: IO (IORef Int64))
+       resultChunks <- procChunks ref chunks
+       return (BSL.fromChunks resultChunks)
+
+    where procChunks ref chunks = unsafeInterleaveIO $
+            case chunks of
+              [] -> do sz <- readIORef ref
+                       writeFile fp (show sz)
+                       return [BS.empty]
+              (x:xs) -> do modifyIORef ref (\sz -> sz + (fromIntegral . BS.length $ x))
+                           remainder <- procChunks ref xs
+                           return (x : remainder)
+                           
 usage :: IO a
 usage =
     do putStrLn "Usage:\n"
