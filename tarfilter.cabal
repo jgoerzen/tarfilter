@@ -1,5 +1,5 @@
-Name: datapacker
-Version: 1.0.0
+Name: tarfilter
+Version: 0.1.0
 License: GPL
 Maintainer: John Goerzen <jgoerzen@complete.org>
 Author: John Goerzen
@@ -27,11 +27,17 @@ Description: datapacker is a tool to group files by size. It is
  pipes and call other tools.
 
 Build-Depends: unix, MissingH>=1.0.1, mtl, base, filepath, directory,
-               hslogger, process
+               hslogger, process, HSH
 
-Executable: datapacker
-Main-Is: datapacker.hs
+Executable: tarenc
+Main-Is: tarenc.hs
    
+Executable: tarenc-scanner
+Main-Is: tarencscanner.hs
+
+Executable: tarenc-encoder
+Main-Is: tarencencoder.hs
+
 GHC-Options: -O2 -Wall
      
 -- Extensions: ExistentialQuantification, OverlappingInstances,
