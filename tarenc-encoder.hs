@@ -33,6 +33,7 @@ import Control.Exception(evaluate)
 import Data.IORef
 import System.Path
 import System.IO.Unsafe(unsafeInterleaveIO)
+import Data.String.Utils(strip)
 
 type InputTarContent = (Int64, FilePath)
 type InputTarSize = (FilePath, Maybe Int64)
@@ -49,28 +50,30 @@ main = brackettmpdir "tarenc-encoder.XXXXXX" $ \tmpdir -> do
        rawDataH <- openFile rawdatafn ReadMode
 
        hSetBuffering stdin LineBuffering
-       blockData <- getContents
-       let sizes = convToSize . parseMinusR $ blockData
 
-       procData tmpdir encoder offsetH rawDataH sizes
+       procData tmpdir encoder offsetH rawDataH
        hClose offsetH
 
-procData :: FilePath -> String -> Handle -> Handle -> [InputTarSize] -> IO ()
+procData :: FilePath -> String -> Handle -> Handle -> IO ()
 procData tmpdir encoder offseth = 
-    pdworker (tmpdir ++ "/sizefn") encoder offseth 0 
+    pdworker (tmpdir ++ "/sizefn") encoder offseth 0 (-1)
 
-pdworker :: FilePath -> String -> Handle -> Int64 -> Handle -> [InputTarSize] -> IO ()
-pdworker _ _ _ _ _ [] = return ()
-pdworker sizefp encoder offseth bytesWritten rawDataH (thisSize:xs) =
-    case thisSize of
-      (fp, Nothing) -> -- Last entry
-          do newlen <- writeEncoded Nothing
-             write newlen fp
-      (fp, Just sz) -> -- Regular entry
-          do let fullsize = sz * 512
-             newlen <- writeEncoded (Just (fromIntegral fullsize))
-             write newlen fp
-             pdworker sizefp encoder offseth (bytesWritten + newlen) rawDataH xs
+pdworker :: FilePath -> String -> Handle -> Int64 -> Integer -> Handle -> IO ()
+pdworker sizefp encoder offseth bytesWritten lastBlock rawDataH =
+    do eof <- hIsEOF stdin
+       if eof
+           then return ()
+           else do l <- getLine
+                   let thisInfo = parseMinusR . strip $ l
+                   case thisSize of
+                     (fp, Nothing) -> -- Last entry
+                                 do newlen <- writeEncoded Nothing
+                                    write newlen fp
+                     (fp, Just sz) -> -- Regular entry
+                             do let fullsize = sz * 512
+                                newlen <- writeEncoded (Just (fromIntegral fullsize))
+                                write newlen fp
+                                pdworker sizefp encoder offseth (bytesWritten + newlen) rawDataH
     where write :: Int64 -> FilePath -> IO ()
           write l fp =
               hPutStrLn offseth $ show bytesWritten ++ "\t" ++ show l ++ "\t" ++
@@ -112,11 +115,14 @@ usage =
        fail "Usage error"
        
 parseMinusR :: String -> [InputTarContent]
-parseMinusR = map procLine . lines
-    where procLine l = case parse entry ("Line: " ++ show l) l of
-                         Left x -> error (show x)
-                         Right y -> y
-          entry = do string "block "
+parseMinusR = map parseMinusRLine . lines
+
+parseMinusRLine :: String -> InputTarContent
+parseMinusRLine l = 
+    case parse entry ("Line: " ++ show l) l of
+      Left x -> error (show x)
+      Right y -> y
+    where entry = do string "block "
                      bn <- many1 digit
                      string ": "
                      fn <- many1 (noneOf "\n\r")
