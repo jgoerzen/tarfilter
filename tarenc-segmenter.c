@@ -15,7 +15,7 @@ struct mydata {
   off_t offset;
   off_t cmpoffset;
   char buff[1024];
-  FILE *copytofd;
+  FILE *copytofile;
 };
 
 struct mypipes {
@@ -33,6 +33,7 @@ void checkblock(off_t offset);
 void errorexit(char *msg);
 int checkerror(int code, char *msg);
 void initpipes(struct mypipes *pipes);
+void forkencoder(struct mypipes *pipes, char *encoder);
 
 int main(int argc, char *argv) {
   FILE *offsetf;
@@ -80,6 +81,7 @@ convert_archive(char *encoder)
   struct archive_entry *entry;
   off_t startingoffset;
   const void *tmpbuf;
+  pid_t encoderpid, counterpid;
 
   /* libarchive seems to read one block at open; special case this */
   int offsetcorrection = TARENC_BUFSIZE;
@@ -90,8 +92,9 @@ convert_archive(char *encoder)
   mypipes = malloc(sizeof(struct mypipes));
 
   initpipes(mypipes);
+  encoderpid = forkencoder(mypipes, encoder);
+  mydata->copytofile = fdopen(mypipes->toencoder_w, "wb");
   
-
   a = archive_read_new();
   mydata->name = "(stdin)";
 
@@ -139,6 +142,54 @@ void initpipes(struct mypipes *pipes) {
   pipes->countreport_w = filedes[1];
 }
 
+pid_t forkencoder(struct mypipes *pipes, char *encoder) {
+  pid_t childpid, encoderpid;
+  int newfiledes[2];
+  off_t bytecount = 0;
+  char buff[TARENC_BUFSIZE * 4];
+  ssize_t readcount = 0;
+  int writecount = 0;
+  FILE *writereport;
+
+  childpid = checkerror(fork());
+  
+  if (childpid > 0) {
+    close(pipes->toencoder_r);
+    close(pipes->countreport_w);
+    // counter is separate
+  } else {
+    close(pipes->toencoder_w);
+    close(pipes->countreport_r);
+
+    // Set up pipe for communication between encoder and counter
+    checkerror(pipe(newfiledes));
+    
+    encoderpid = checkerror(fork());
+    if (encoderpid > 0) {
+      close(newfiledes[1]);
+      while (1) {               /* there is data to read */
+        readcount = checkerror(read(newfiledes[0], buff, TARENC_BUFSIZE));
+        if (readcount == 0) {
+          break;
+        }
+        bytecount += (off_t) readcount;
+        writecount = 0;
+        while (readcount > writecount) {
+          writecount += checkerror((int) write(1, buff + writecount, readcount - writecount));
+        }
+      }
+      writereport = fdopen(pipes->countreport_w, "wt");
+      fprintf(writereport, "%" PRId64 "\n", bytecount);
+      fclose(writereport);
+      exit(0);
+    } else {
+      close(newfiledes[0]);
+      checkerror(execl("/bin/sh", "-c", encoder));
+    }
+  }
+  return childpid;
+}
+  
 ssize_t
 myread(struct archive *a, void *client_data, const void **buff)
 {
