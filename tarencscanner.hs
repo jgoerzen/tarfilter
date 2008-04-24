@@ -23,7 +23,6 @@ Written by John Goerzen, jgoerzen\@complete.org
 import System.Environment
 import HSH
 import System.IO
-import Data.Int
 import Control.Monad
 
 main :: IO ()
