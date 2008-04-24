@@ -4,6 +4,8 @@
 all: setup			# GHC build
 	./setup configure
 	./setup build
+	rm -f tarenc tarenc-encoder tarenc-scanner
+	for ASDF in tarenc tarenc-encoder tarenc-scanner; do ln -s dist/build/$$ASDF/$$ASDF; done
 
 hugsbuild: setup
 	./setup configure --hugs
@@ -49,7 +51,7 @@ clean-code:
 	-cd libsrc && ../setup clean
 	-rm -rf dist libsrc/dist *.ho *.hi *.o *.a setup *~
 	-rm -f `find . -name "*~"` `find . -name "*.o"`
-	-rm -f `find . -name "*.cm*"`
+	-rm -f `find . -name "*.cm*"` tarenc tarenc-encoder tarenc-scanner
 
 clean-doc:
 	-rm -f *.1 *.ps *.pdf *.txt *.links *.refs *.html
