@@ -81,7 +81,8 @@ pdworker sizefp encoder offseth bytesWritten (thisSize:xs) =
               do let cmdend = encoder -|- countBytes sizefp
                  case size of
                    Nothing -> runIO cmdend
-                   Just x -> runIO $ echoBytes 512 x -|- cmdend
+                   Just x -> do evaluate x
+                                runIO $ echoBytes 512 x -|- cmdend
                  -- BSL.putStr x
                  countStr <- readFile sizefp
                  -- let countStr = "0"
@@ -92,10 +93,8 @@ echoBytes :: Int -> Int64 -> Handle -> Handle -> IO ()
 echoBytes _ 0 _ _ = return ()
 echoBytes chunksize count hr hw =
     do hSetBuffering hr (BlockBuffering (Just chunksize))
-       hPutStrLn stderr $ "echoBytes: " ++ show (chunksize, count)
        when (count < 1) $ fail "echoBytes: negative count not supported"
        r <- BSL.hGet hr chunksize
-       hPutStrLn stderr $ "echoBytes: received chunk size " ++ show (BSL.length r)
        case BSL.null r of
          True -> return ()      -- Less data than count existed; return now
          False -> do BSL.hPutStr hw r
