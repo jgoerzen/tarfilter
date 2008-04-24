@@ -6,6 +6,8 @@
 #include <fcntl.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <sys/wait.h>
+#include <string.h>
 
 #define TARENC_BUFSIZE 512
 
@@ -23,9 +25,11 @@ struct mypipes {
   int toencoder_w;
   int countreport_r;
   int countreport_w;
+  int encoder_pid;
+  int counter_pid;
 }
 
-void convert_archive(char *encoder);
+void convert_archive(char *encoder, FILE *offsetf);
 int myopenstdin(struct archive *a, void *client_data);
 int myclose(struct archive *a, void *client_data);
 ssize_t myread(struct archive *a, void *client_data, const void **buff);
@@ -33,6 +37,7 @@ void checkblock(off_t offset);
 void errorexit(char *msg);
 int checkerror(int code, char *msg);
 void initpipes(struct mypipes *pipes);
+off_t closepipes(struct mypipes *pipes);
 void forkencoder(struct mypipes *pipes, char *encoder);
 
 int main(int argc, char *argv) {
@@ -47,9 +52,9 @@ int main(int argc, char *argv) {
     errorexit(argv[1]);
   }
 
-  fprintf(offsetf, "cmpoffset\tuncoffset\tcmpsize\tuncsize\tfilename\n");
+  fprintf(offsetf, "uncoffset\tcmpoffset\tuncsize\tcmpsize\tfilename\n");
 
-  convert_archive(argv[1]);
+  convert_archive(argv[1], offsetf);
   return(0);
 }
 
@@ -71,17 +76,17 @@ void checkblock(off_t offset) {
   }
 }
 
-void
-convert_archive(char *encoder)
+void convert_archive(char *encoder, FILE *offsetf)
 {
   struct mydata *mydata;
   struct mypipes *mypipes;
   
   struct archive *a;
   struct archive_entry *entry;
-  off_t startingoffset;
+  off_t startingoffset, cmpsize;
   const void *tmpbuf;
   pid_t encoderpid, counterpid;
+  char *filename;
 
   /* libarchive seems to read one block at open; special case this */
   int offsetcorrection = TARENC_BUFSIZE;
@@ -92,8 +97,11 @@ convert_archive(char *encoder)
   mypipes = malloc(sizeof(struct mypipes));
 
   initpipes(mypipes);
-  encoderpid = forkencoder(mypipes, encoder);
+  forkencoder(mypipes, encoder);
   mydata->copytofile = fdopen(mypipes->toencoder_w, "wb");
+  if (mydata->copytofile == NULL) {
+    errorexit("fdopen toencoder_w");
+  }
   
   a = archive_read_new();
   mydata->name = "(stdin)";
@@ -103,28 +111,46 @@ convert_archive(char *encoder)
   archive_read_open(a, mydata, myopenstdin, myread, myclose);
 
   while (1) {
+    fprintf(offsetf, "%" PRId64 "\t%" PRId64 "\t", 
+            mydata->offset - offsetcorrection,
+            mydata->cmpoffset);
+
     // printf("block %" PRId64 ": ", 
     //        (mydata->offset - offsetcorrection) / TARENC_BUFSIZE);
 
     checkblock(mydata->offset);
-    startingoffset = mydata->offset;
+    startingoffset = mydata->offset - offsetcorrection;
+    startingcmpoffset = mydata->cmpoffset;
 
     if (archive_read_next_header(a, &entry) != ARCHIVE_OK) {
-      printf("** Block of NULs **\n");
+      filename = "** Block of NULs **";
       while (myread(a, mydata, &tmpbuf)) {};
+      /*
       printf("  + hdr blocks: %" PRId64 "\n", 
              (mydata->offset - offsetcorrection - startingoffset / TARENC_BUFSIZE));
+             } */
       break;
     }
+    filename = archive_entry_pathname(entry);
+    /*
     printf("%s\n",archive_entry_pathname(entry));
     printf("  + hdr blocks: %" PRId64, 
            (mydata->offset + offsetcorrection - startingoffset) / TARENC_BUFSIZE);
+    */
     offsetcorrection = 0;
     checkblock(mydata->offset);
-    startingoffset = mydata->offset;
+    // startingoffset = mydata->offset;
+
     archive_read_data_skip(a);
-    printf(", + data blocks: %" PRId64 "\n", (mydata->offset - startingoffset) / TARENC_BUFSIZE);
+    //printf(", + data blocks: %" PRId64 "\n", (mydata->offset - startingoffset) / TARENC_BUFSIZE);
     checkblock(mydata->offset);
+
+    fclose(mydata->copytofile);
+    cmpsize = closepipes(mypipes);
+
+    fprintf(offsetf, "%" PRId64 "\t%" PRId64 "\t%s\n",
+            mydata->offset - startingoffset,
+            mydata->cmpoffset 
   }
   archive_read_finish(a);
   free(mydata);
@@ -142,8 +168,8 @@ void initpipes(struct mypipes *pipes) {
   pipes->countreport_w = filedes[1];
 }
 
-pid_t forkencoder(struct mypipes *pipes, char *encoder) {
-  pid_t childpid, encoderpid;
+void forkencoder(struct mypipes *pipes, char *encoder) {
+  pid_t counterpid, encoderpid;
   int newfiledes[2];
   off_t bytecount = 0;
   char buff[TARENC_BUFSIZE * 4];
@@ -151,47 +177,90 @@ pid_t forkencoder(struct mypipes *pipes, char *encoder) {
   int writecount = 0;
   FILE *writereport;
 
-  childpid = checkerror(fork());
-  
-  if (childpid > 0) {
-    close(pipes->toencoder_r);
-    close(pipes->countreport_w);
-    // counter is separate
-  } else {
-    close(pipes->toencoder_w);
-    close(pipes->countreport_r);
-
-    // Set up pipe for communication between encoder and counter
-    checkerror(pipe(newfiledes));
+  // Set up pipe for communication between encoder and counter
+  checkerror(pipe(newfiledes));
     
+  counterpid = checkerror(fork());
+  if (counterpid > 0) {           /* Main parent */
+    pipes->counterpid = counterpid;
+
     encoderpid = checkerror(fork());
-    if (encoderpid > 0) {
-      close(newfiledes[1]);
-      while (1) {               /* there is data to read */
-        readcount = checkerror(read(newfiledes[0], buff, TARENC_BUFSIZE));
-        if (readcount == 0) {
-          break;
-        }
-        bytecount += (off_t) readcount;
-        writecount = 0;
-        while (readcount > writecount) {
-          writecount += checkerror((int) write(1, buff + writecount, readcount - writecount));
-        }
-      }
-      writereport = fdopen(pipes->countreport_w, "wt");
-      fprintf(writereport, "%" PRId64 "\n", bytecount);
-      fclose(writereport);
-      exit(0);
-    } else {
+    if (encoderpid > 0) {       /* Main parent continued */
+      pipes->encoderpid = encoderpid;
+
+      close(pipes->toencoder_r);
+      close(pipes->countreport_w);
       close(newfiledes[0]);
+      close(newfiledes[1]);
+    } else {                    /* Encoder */
+      close(pipes->toencoder_w);
+      close(pipes->countreport_w);
+      close(pipes->countreport_r);
+      close(newfiledes[0]);
+
+      dup2(newfiledes[1], 1);
+      close(newfiledes[1]);
+
+      dup2(pipes->toencoder_r, 0);
+      close(pipes->toencoder_r);
+
       checkerror(execl("/bin/sh", "-c", encoder));
     }
+  } else {                      /* Counter */
+    close(pipes->toencoder_r);
+    close(pipes->toencoder_w);
+    close(pipes->countreport_r);
+    close(newfiledes[1]);
+    
+    while (1) {               /* there is data to read */
+      readcount = checkerror(read(newfiledes[0], buff, TARENC_BUFSIZE));
+      if (readcount == 0) {
+        break;
+      }
+      bytecount += (off_t) readcount;
+      writecount = 0;
+      while (readcount > writecount) {
+        writecount += checkerror((int) write(1, buff + writecount, readcount - writecount));
+      }
+    }
+    writereport = fdopen(pipes->countreport_w, "wt");
+    fprintf(writereport, "%" PRId64, bytecount);
+    fclose(writereport);
+    exit(0);
+  } /* Counter */
+}
+
+off_t closepipes(struct mypipes *pipes) {
+  char buff[1024];
+  FILE *reader;
+  int scanfresult;
+  off_t retval;
+  
+  reader = fdopen(pipes->countreport_r, "rt");
+  if (reader == NULL) {
+    errorexit("fdopen pipes->countreport_r");
   }
-  return childpid;
+  
+  scanfresult = fscanf(reader, "%" SCNd64, &retval);
+  if (scanfresult == EOF) {
+    errorexit("scanf reader");
+  } else {
+    if (scanfresult != 0) {
+      fprintf(stderr, "Got unexpected scanf result: %d\n", scanfresult);
+      exit(6);
+    }
+  }
+
+  fclose(reader);
+  // handled by fclose above: close(pipes->toencoder_w);
+  // handled by fclose(reader): close(pipes->countreport_r);
+
+  waitpid(pipes->encoder_pid, NULL, 0);
+  waitpid(pipes->counter_pid, NULL, 0);
+  return retval;
 }
   
-ssize_t
-myread(struct archive *a, void *client_data, const void **buff)
+ssize_t myread(struct archive *a, void *client_data, const void **buff)
 {
   struct mydata *mydata = client_data;
   ssize_t bytesread = 0, thisread;
