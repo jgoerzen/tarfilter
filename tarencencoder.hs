@@ -47,6 +47,7 @@ main = brackettmpdir "tarenc-encoder.XXXXXX" $ \tmpdir -> do
        
        offsetH <- openFile offsetfn WriteMode
        tarData <- BSL.readFile tardatafn
+       hSetBuffering stdin LineBuffering
        blockData <- getContents
        let sizes = convToSize . parseMinusR $ blockData
 
@@ -76,10 +77,14 @@ pdworker sizefp encoder offseth bytesWritten inp (thisSize:xs) =
                         fp
           writeEncoded x =
               do runIO $ echoBS x -|- encoder -|- countBytes sizefp
+                 -- BSL.putStr x
                  countStr <- readFile sizefp
                  -- let countStr = "0"
                  -- hPutStrLn stderr $ "writeEncoded: got " ++ show countStr
                  return (read countStr)
+
+echoBytes :: Int64 -> BSL.ByteString -> BSL.ByteString
+echoBytes = BSL.take
 
 countBytes :: FilePath -> BSL.ByteString -> IO BSL.ByteString
 countBytes fp inp = 
