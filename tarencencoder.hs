@@ -74,10 +74,20 @@ pdworker encoder offseth bytesWritten inp (thisSize:xs) =
               do -- Ugly hack.  stdout fd 1 is messed with by the pipe.  We
                  -- dup it so we can write directly out AND return a byte
                  -- count.
-                 aliasFd <- dup 1
+                 aliasFd' <- dup 1
+                 -- Even uglier: when dup returns 0, it confuses the heck out
+                 -- of HSH.
+                 aliasFd <- case aliasFd' of
+                              0 -> do newFd <- dup 1
+                                      closeFd 0
+                                      return newFd
+                              y -> return y
+
+                 -- hPutStrLn stderr $ "writeEncoded: fds " ++ show aliasFd
                  aliasH <- fdToHandle aliasFd
                  countStr <- run $ echoBS x -|- encoder -|- countBytes aliasH
                  hClose aliasH
+                 -- hPutStrLn stderr $ "writeEncoded: got " ++ show countStr
                  return (read countStr)
 
 countBytes :: Handle -> BSL.ByteString -> IO BSL.ByteString
@@ -89,7 +99,8 @@ countBytes h inp =
        return retval
        
     where updSize accum c =
-              do BS.hPutStr h c
+              do 
+                 BS.hPutStr h c
                  return (accum + (fromIntegral . BS.length $ c))
            
 usage :: IO a
