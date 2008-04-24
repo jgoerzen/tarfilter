@@ -34,11 +34,11 @@ Main-Is: tarenc.hs
 GHC-Options: -O2 -Wall
    
 Executable: tarenc-scanner
-Main-Is: tarencscanner.hs
+Main-Is: tarenc-scanner.hs
 GHC-Options: -O2 -Wall
 
 Executable: tarenc-encoder
-Main-Is: tarencencoder.hs
+Main-Is: tarenc-encoder.hs
 
 GHC-Options: -O2 -Wall
      
