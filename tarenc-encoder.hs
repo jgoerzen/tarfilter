@@ -70,7 +70,7 @@ pdworker sizefp encoder offseth bytesWritten (thisSize:xs) =
              write newlen fp
       (fp, Just sz) -> -- Regular entry
           do let fullsize = sz * 512
-             newlen <- writeEncoded (Just fullsize)
+             newlen <- writeEncoded (Just (fromIntegral fullsize))
              write newlen fp
              pdworker sizefp encoder offseth (bytesWritten + newlen) xs
     where write :: Int64 -> FilePath -> IO ()
@@ -78,28 +78,46 @@ pdworker sizefp encoder offseth bytesWritten (thisSize:xs) =
               hPutStrLn offseth $ show bytesWritten ++ "\t" ++ show l ++ "\t" ++
                         fp
           writeEncoded size =
-              do let cmdend = encoder -|- countBytes sizefp
-                 case size of
-                   Nothing -> runIO cmdend
+              do case size of
+                   Nothing -> return ()
                    Just x -> do evaluate x
-                                runIO $ echoBytes 512 x -|- cmdend
+                                return ()
+                 runIO $ echoBytes 512 size -|- encoder -|- countBytes sizefp
                  -- BSL.putStr x
                  countStr <- readFile sizefp
                  -- let countStr = "0"
                  -- hPutStrLn stderr $ "writeEncoded: got " ++ show countStr
                  return (read countStr)
 
-echoBytes :: Int -> Int64 -> Handle -> Handle -> IO ()
-echoBytes _ 0 _ _ = return ()
+{- | Copy data in chunks from stdin to stdout, optionally with a fixed
+maximum size.   Uses strict ByteStrings internally.  Uses hSetBuffering
+to set the buffering of the input handle to blockbuffering in chunksize
+increments as well. -}
+echoBytes :: Int                -- ^ Preferred chunk size; data will be read in chunks of this size
+          -> (Maybe Integer)    -- ^ Maximum amount of data to transfer
+          -> Handle             -- ^ Handle for input
+          -> Handle             -- ^ Handle for output
+          -> IO ()
+echoBytes _ (Just 0) _ _ = return ()
 echoBytes chunksize count hr hw =
     do hSetBuffering hr (BlockBuffering (Just chunksize))
-       when (count < 1) $ fail "echoBytes: negative count not supported"
-       r <- BSL.hGet hr chunksize
-       case BSL.null r of
-         True -> return ()      -- Less data than count existed; return now
-         False -> do BSL.hPutStr hw r
-                     echoBytes chunksize (count - BSL.length r) hr hw
-    where readamount = min count (fromIntegral chunksize)
+       case count of 
+         Just x -> if x < 1
+                      then do fail $ "echoBytes: count < 0 not supported"
+                      else return ()
+         _ -> return ()
+       r <- BS.hGet hr chunksize
+       if BS.null r
+          then return ()        -- No more data to read
+          else do BS.hPutStr hw r
+                  echoBytes chunksize (newCount (BS.length r)) hr hw
+    where readamount = 
+              case count of
+                Just x -> min x (fromIntegral chunksize)
+                Nothing -> (fromIntegral chunksize)
+          newCount newlen = case count of
+                              Nothing -> Nothing
+                              Just x -> Just (x - (fromIntegral newlen))
 
 countBytes :: FilePath -> BSL.ByteString -> IO BSL.ByteString
 countBytes fp inp = 
