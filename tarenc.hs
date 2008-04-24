@@ -25,6 +25,7 @@ import HSH
 import System.IO
 import Control.Monad
 import System.Path
+import System.Posix.Files
 
 main :: IO ()
 main = brackettmpdir "tarenc.XXXXXX" $ \tmpdir ->
@@ -36,9 +37,10 @@ main = brackettmpdir "tarenc.XXXXXX" $ \tmpdir ->
                                 _ -> usage
 
        let fifopath = tmpdir ++ "/tarfifo"
+       createNamedPipe fifopath 0o600
        pn <- getProgName
        abspn <- abspath pn
-       let pnbase = basename abspn
+       let pnbase = dirname abspn
        
        runIO $ (pnbase ++ "/tarenc-scanner", [fifopath]) -|-
                (pnbase ++ "/tarenc-encoder", [fifopath, encoder, offsetfn])

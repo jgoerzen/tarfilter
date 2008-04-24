@@ -5,7 +5,7 @@ all: setup			# GHC build
 	./setup configure
 	./setup build
 	rm -f tarenc tarenc-encoder tarenc-scanner
-	for ASDF in tarenc tarenc-encoder tarenc-scanner; do ln -s dist/build/$$ASDF/$$ASDF; done
+	for ASDF in tarenc tarenc-encoder tarenc-scanner; do ln dist/build/$$ASDF/$$ASDF; done
 
 hugsbuild: setup
 	./setup configure --hugs
