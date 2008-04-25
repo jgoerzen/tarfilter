@@ -15,14 +15,14 @@ Copyright (C) 2008 John Goerzen <jgoerzen@complete.org>
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 -}
 
-module Commands.Encode where
+module Commands.Cat where
 import System.Console.GetOpt
 import System.Console.GetOpt.Utils
 import System.Cmd.Utils
 import Utils
 
-cmd = simpleCmd "encode"
-      "Encode a plain tar file with the Tarf algorithm" helptext
+cmd = simpleCmd "cat"
+      "Decode a Tarf-encoded tar file, output plain tar file" helptext
       [Option "d" ["decoder"] (ReqArg (stdRequired "d") "PROGRAM")
               "Program to use for decoding",
        Option "r" ["readindex"] (ReqArg (stdRequired "r") "FILE")
@@ -35,26 +35,58 @@ cmd = simpleCmd "encode"
 cmd_worker (args, []) =
     do decoder <- case lookup "d" args of
                     Just x -> return x
-                    Nothing -> fail "decode: --decoder required; see tarf decode --help"
+                    Nothing -> fail "tarf cat: --decoder required; see tarf decode --help"
        indexfn <- case lookup "r" args of 
                     Just x -> return x
-                    Nothing -> fail "decode: --readindex required; see tarf decode --help"
+                    Nothing -> fail "tarf cat: --readindex required; see tarf decode --help"
        tardatah <- case lookup "f" args of
                      Just x -> openFile x ReadMode
                      Nothing -> stdin
        
        tarindexstr <- readFile indexfn
+       let tarindex' = parseIndex tarindexstr
+
+       let nullblock = last tarindex'
+       let tarindex = init tarindex'
        
-       prog <- getProgram "tarf-encoder"
-       safeSystem prog [encoder, indexfn]
+       seekable <- hIsSeekable tardatah
+       let seekfunc =
+               case seekable of
+                 True -> (\h -> hSeek h RelativeSeek)
+                 Fasle -> hSkip
+
+       processTar decoder tardatah seekfunc (tarindex ++ [nullblock])
 
 cmd_worker _ =
-    fail $ "Invalid arguments to decode; please see tarf decode --help"
+    fail $ "Invalid arguments to cat; please see tarf cat --help"
+
+processTar :: String -> Handle -> (Integer -> IO ()) -> TarFile -> IO ()
+processTar decoder tardatah seekfunc tf = 
+    do (cmpoffset, offset) <- processTar' decoder tardatah seekfunc 0 0 tf
+       -- Make sure we pad with nulls to next 10240-byte boundary
+       let neededPad = (fromImtegral) (offset `mod` 10240)
+       let nulls = replicate neededPad 0
+       BSL.putStr (BSL.pack nulls)
+
+processTar' :: String -> Handle -> (Integer -> IO ()) -> Integer -> Integer -> TarFile -> IO (Integer, Integer)
+processTar' _ _ _ cmpoffset offset [] = return (cmpoffset, offset)
+processTar' decoder tardatah seekfunc cmpoffset offset (te:xs) = 
+    do skipIt
+       runIO $ catBytesFrom 4096 tardatah
+                 (Just (cmpSize te)) -|- decoder
+       processTar' decoder tardatah seekfunc newCmpOffset newOffset xs
+    where skipAmountCmp = cmpOff te - cmpoffset
+          newCmpOffset = cmpoffset + skipAmountCmp + cmpSize te
+          newOffset = offset + uncSize te
+          skipIt 
+              | skipAmountCmp == 0 = return ()
+              | otherwise = seekfunc skipAmountCmp
 
 helptext = 
-    "Usage: tarf decode -d decoder -r /path/to/index -f file > tar\n\n\
+    "Usage: tarf cat -d cat -r /path/to/index -f file > tar\n\n\
 \Read a tarf-formatted file from standard input.  Using the index given\n\
-\by -r
-\Read a tar file from standard input.  Encode using the given encoder\n\
-\into the tarf format.  Write the resulting tar file to stdout, and\n\
-\write an index to the file given by -w.\n"
+\by -r, decode the file, using efficient seeks if supported by the\n\
+\underlying input supply.  Write resulting plain tar file to stdout.\n\
+\\n\
+\If -f is specified, read from the named file instead of stdin.\n"
+

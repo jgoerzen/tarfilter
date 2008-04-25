@@ -19,12 +19,14 @@ module Commands where
 import Text.Printf
 import Utils
 
+import qualified Commands.Cat
 import qualified Commands.Encode
 import qualified Commands.Scan
 
 allCommands :: [(String, Command)]
 allCommands = 
     [
+     Commands.Cat.cmd,
      Commands.Encode.cmd,
      lscommands,
      Commands.Scan.cmd
