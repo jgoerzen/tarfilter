@@ -37,8 +37,9 @@ lscommands =
 
 lscommands_worker :: ([(String, String)], [String]) -> IO ()
 lscommands_worker _ =
-    do putStrLn "All available commands:"
+    do putStrLn "\nAll available tarf commands:\n"
        printf "%-20s %s\n" "Name" "Description"
        putStrLn "-------------------- -------------------------------------------------------"
        mapM_ (\(_, x) -> printf "%-20s %s\n" (cmdname x) (cmddescrip x))
              allCommands
+       putStrLn ""
