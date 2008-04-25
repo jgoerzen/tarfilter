@@ -224,6 +224,8 @@ void forkencoder(struct mypipes *pipes, char *encoder) {
   // Set up pipe for communication between encoder and counter
   checkerror("forkencoder pipe", pipe(newfiledes));
     
+  fflush(NULL);                 /* Make sure all buffers are flushed now */
+
   counterpid = checkerror("fork counter", fork());
   if (counterpid > 0) {           /* Main parent */
     pipes->counterpid = counterpid;
