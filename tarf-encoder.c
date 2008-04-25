@@ -45,7 +45,7 @@ int main(int argc, char **argv) {
   FILE *offsetf;
   if (argc != 3) {
     printf("Usage:\n");
-    printf("tarenc-segmenter segmentcmd offsetfile\n");
+    printf("tarf-encoder segmentcmd offsetfile\n");
     return(1);
   }
   offsetf = fopen(argv[2], "wt");
@@ -59,11 +59,13 @@ int main(int argc, char **argv) {
   return(0);
 }
 
+/* Unconditionally print the given message and exit. */
 void errorexit(char *msg) {
   perror(msg);
   exit(5);
 }
   
+/* If code is < 0, print the given message and exit. */
 int checkerror(char *msg, int code) {
   if (code < 0) {
     errorexit(msg);
@@ -71,12 +73,14 @@ int checkerror(char *msg, int code) {
   return(code);
 }
  
+/* Check to make sure that a given offset is a multiple of the blocksize. */
 void checkblock(off_t offset) {
   if (offset % TARENC_BUFSIZE != 0) {
-    printf("\nWARNING: offset %" PRId64 " is not a multiple of %d!\n", offset, TARENC_BUFSIZE);
+    fprintf(stderr, "\nWARNING: offset %" PRId64 " is not a multiple of %d!\n", offset, TARENC_BUFSIZE);
   }
 }
 
+/* Main conversion function */
 void convert_archive(char *encoder, FILE *offsetf)
 {
   struct mydata *mydata;
@@ -159,6 +163,7 @@ void convert_archive(char *encoder, FILE *offsetf)
   free(mypipes);
 }
 
+/* Set up pipes, fork the encoder, and set up writing for a new segment. */
 void setupsegment(struct mydata *mydata, struct mypipes *pipes, char *encoder) {
   initpipes(pipes);
   forkencoder(pipes, encoder);
@@ -168,6 +173,7 @@ void setupsegment(struct mydata *mydata, struct mypipes *pipes, char *encoder) {
   }
 }
 
+/* Set up pipes. */
 void initpipes(struct mypipes *pipes) {
   int filedes[2];
   
@@ -180,6 +186,7 @@ void initpipes(struct mypipes *pipes) {
   pipes->countreport_w = filedes[1];
 }
 
+/* Fork encoder and counter */
 void forkencoder(struct mypipes *pipes, char *encoder) {
   pid_t counterpid, encoderpid;
   int newfiledes[2];
@@ -244,6 +251,7 @@ void forkencoder(struct mypipes *pipes, char *encoder) {
   } /* Counter */
 }
 
+/* Close pipes and wait for encoder and counter */
 off_t closepipes(struct mypipes *pipes) {
   FILE *reader;
   int scanfresult;
@@ -273,6 +281,7 @@ off_t closepipes(struct mypipes *pipes) {
   return retval;
 }
   
+/* Read callback */
 ssize_t myread(struct archive *a, void *client_data, const void **buff)
 {
   struct mydata *mydata = client_data;
@@ -304,8 +313,7 @@ ssize_t myread(struct archive *a, void *client_data, const void **buff)
   return(bytesread);
 }
 
-int
-myopenstdin(struct archive *a, void *client_data)
+int myopenstdin(struct archive *a, void *client_data)
 {
   struct mydata *mydata = client_data;
 
@@ -315,8 +323,7 @@ myopenstdin(struct archive *a, void *client_data)
   return(ARCHIVE_OK);
 }
 
-int
-myclose(struct archive *a, void *client_data)
+int myclose(struct archive *a, void *client_data)
 {
   struct mydata *mydata = client_data;
 
