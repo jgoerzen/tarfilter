@@ -52,7 +52,7 @@ int main(int argc, char **argv) {
     errorexit(argv[1]);
   }
 
-  fprintf(offsetf, "uncoffset\tcmpoffset\tuncsize\tcmpsize\tfilename\n");
+  fprintf(offsetf, "uncoff\tcmpoff\tuncsize\tcmpsize\tfilename\n");
 
   convert_archive(argv[1], offsetf);
   return(0);
@@ -150,7 +150,17 @@ void convert_archive(char *encoder, FILE *offsetf)
             mydata->offset - startingoffset,
             cmpsize, filename);
     mydata->cmpoffset += cmpsize;
+
+    initpipes(mypipes);
+    forkencoder(mypipes, encoder);
+    mydata->copytofile = fdopen(mypipes->toencoder_w, "wb");
+
   }
+  
+  fclose(mydata->copytofile);
+  cmpsize = closepipes(mypipes);
+  fprintf(offsetf, "%" PRId64 "\t%" PRId64 "\t%s\n",
+          mydata->offset - startingoffset, cmpsize, filename);
   archive_read_finish(a);
   free(mydata);
 }
@@ -263,7 +273,7 @@ off_t closepipes(struct mypipes *pipes) {
 ssize_t myread(struct archive *a, void *client_data, const void **buff)
 {
   struct mydata *mydata = client_data;
-  ssize_t bytesread = 0, thisread;
+  size_t bytesread = 0, thisread;
 
   /* Try really hard to get things in exactly TARENC_BUFSIZE bytes. */
 
@@ -278,12 +288,12 @@ ssize_t myread(struct archive *a, void *client_data, const void **buff)
     if (thisread == 0) {
       break;
     }
-    bytesread += thisread;
+    bytesread += (size_t) thisread;
   }
                
   mydata->offset += (off_t) bytesread;
   if (mydata->copytofile != NULL) {
-    if (fwrite(mydata->buff, 1, bytesread, mydata->copytofile) != bytesread) {
+    if (fwrite(mydata->buff, 1, (size_t) bytesread, mydata->copytofile) != bytesread) {
       errorexit("writing to copytofile");
     }
   }
