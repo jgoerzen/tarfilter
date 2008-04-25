@@ -10,8 +10,8 @@ all: hs c
 hs: setup			# GHC build
 	./setup configure
 	./setup build
-	rm -f tarenc tarenc-encoder tarenc-scanner
-	for ASDF in tarenc tarenc-encoder tarenc-scanner; do ln dist/build/$$ASDF/$$ASDF; done
+	rm -f tarf
+	for ASDF in tarf; do ln dist/build/$$ASDF/$$ASDF; done
 
 c: $(CEXES)
 
@@ -22,7 +22,7 @@ hugsbuild: setup
 	./setup configure --hugs
 	./setup build
 
-setup: Setup.lhs tarfilter.cabal
+setup: Setup.lhs tarf.cabal
 	ghc -package Cabal Setup.lhs -o setup
 
 doc: man html pdf txt
@@ -62,7 +62,7 @@ clean-code:
 	-cd libsrc && ../setup clean
 	-rm -rf dist libsrc/dist *.ho *.hi *.o *.a setup *~
 	-rm -f `find . -name "*~"` `find . -name "*.o"`
-	-rm -f `find . -name "*.cm*"` tarenc tarenc-encoder tarenc-scanner
+	-rm -f `find . -name "*.cm*"` tarf
 	-rm -f $(CEXES)
 
 clean-doc:
