@@ -1,11 +1,22 @@
 # Copyright (c) 2004-2008 John Goerzen
 #
 
-all: setup			# GHC build
+CSOURCES:=tarf-encoder.c
+CEXES:= $(patsubst %.c,%,$(CSOURCES))
+
+all: hs c
+
+.PHONY: hs
+hs: setup			# GHC build
 	./setup configure
 	./setup build
 	rm -f tarenc tarenc-encoder tarenc-scanner
 	for ASDF in tarenc tarenc-encoder tarenc-scanner; do ln dist/build/$$ASDF/$$ASDF; done
+
+c: $(CEXES)
+
+%: %.c
+	gcc -Wall -larchive -o $@ $<
 
 hugsbuild: setup
 	./setup configure --hugs
@@ -52,6 +63,7 @@ clean-code:
 	-rm -rf dist libsrc/dist *.ho *.hi *.o *.a setup *~
 	-rm -f `find . -name "*~"` `find . -name "*.o"`
 	-rm -f `find . -name "*.cm*"` tarenc tarenc-encoder tarenc-scanner
+	-rm -f $(CEXES)
 
 clean-doc:
 	-rm -f *.1 *.ps *.pdf *.txt *.links *.refs *.html
