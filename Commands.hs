@@ -20,12 +20,14 @@ import Text.Printf
 import Utils
 
 import qualified Commands.Encode
+import qualified Commands.Scan
 
 allCommands :: [(String, Command)]
 allCommands = 
     [
      Commands.Encode.cmd,
-     lscommands
+     lscommands,
+     Commands.Scan.cmd
     ]
 
 lscommands :: (String, Command)

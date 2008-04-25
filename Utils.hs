@@ -20,7 +20,8 @@ import System.Console.GetOpt
 import System.Exit
 import System.Environment
 import HSH
-import MissingH.Path
+import System.Path
+import System.Posix.Files(createNamedPipe)
 
 data Command =
              Command {cmdname :: String,
@@ -58,7 +59,7 @@ getProgram x =
        abspn <- abspath pn
        return (dirname abspn ++ "/" ++ x)
 
-bracketFIFO :: String -> (String -> IO a) -> IO a)
+bracketFIFO :: String -> (String -> IO a) -> IO a
 bracketFIFO pattern func =
     brackettmpdir pattern fifofunc
     where fifofunc dirname =
