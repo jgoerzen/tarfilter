@@ -22,7 +22,7 @@ import System.Cmd.Utils
 import Utils
 
 cmd = simpleCmd "encode"
-      "Encode a tar file with the Tarf algorithm" helptext
+      "Encode a plain tar file with the Tarf algorithm" helptext
       [Option "e" ["encoder"] (ReqArg (stdRequired "e") "PROGRAM")
               "Program to use for encoding",
        Option "w" ["writeindex"] (ReqArg (stdRequired "w") "FILE")

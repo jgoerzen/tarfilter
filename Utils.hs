@@ -20,6 +20,7 @@ import System.Console.GetOpt
 import System.Exit
 import System.Environment
 import HSH
+import MissingH.Path
 
 data Command =
              Command {cmdname :: String,
@@ -56,3 +57,11 @@ getProgram x =
     do pn <- getProgName
        abspn <- abspath pn
        return (dirname abspn ++ "/" ++ x)
+
+bracketFIFO :: String -> (String -> IO a) -> IO a)
+bracketFIFO pattern func =
+    brackettmpdir pattern fifofunc
+    where fifofunc dirname =
+              let fifoname = dirname ++ "/" ++ "fifo"
+                  in do createNamedPipe fifoname 0o600
+                        func fifoname
