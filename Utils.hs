@@ -18,6 +18,8 @@ module Utils where
 import System.Console.GetOpt.Utils
 import System.Console.GetOpt
 import System.Exit
+import System.Environment
+import HSH
 
 data Command =
              Command {cmdname :: String,
@@ -48,3 +50,9 @@ simpleCmd name descrip helptext optionsinp func =
                  putStrLn helptext
                  exitFailure
           header = "Available command-options for " ++ name ++ " are:\n"
+
+getProgram :: String -> IO String
+getProgram x =
+    do pn <- getProgName
+       abspn <- abspath pn
+       return (dirname abspn ++ "/" ++ x)

@@ -19,9 +19,12 @@ module Commands where
 import Text.Printf
 import Utils
 
+import qualified Commands.Encode
+
 allCommands :: [(String, Command)]
 allCommands = 
     [
+     Commands.Encode.cmd,
      lscommands
     ]
 
