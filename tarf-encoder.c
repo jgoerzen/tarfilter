@@ -36,6 +36,7 @@ ssize_t myread(struct archive *a, void *client_data, const void **buff);
 void checkblock(off_t offset);
 void errorexit(char *msg);
 int checkerror(char *msg, int code);
+void setupsegment(struct mydata *mydata, struct mypipes *pipes, char *encoder);
 void initpipes(struct mypipes *pipes);
 off_t closepipes(struct mypipes *pipes);
 void forkencoder(struct mypipes *pipes, char *encoder);
@@ -94,14 +95,9 @@ void convert_archive(char *encoder, FILE *offsetf)
   mydata->copytofile = NULL;
 
   mypipes = malloc(sizeof(struct mypipes));
-
-  initpipes(mypipes);
-  forkencoder(mypipes, encoder);
-  mydata->copytofile = fdopen(mypipes->toencoder_w, "wb");
-  if (mydata->copytofile == NULL) {
-    errorexit("fdopen toencoder_w");
-  }
   
+  setupsegment(mydata, mypipes, encoder);
+
   a = archive_read_new();
   mydata->name = "(stdin)";
 
@@ -151,10 +147,7 @@ void convert_archive(char *encoder, FILE *offsetf)
             cmpsize, filename);
     mydata->cmpoffset += cmpsize;
 
-    initpipes(mypipes);
-    forkencoder(mypipes, encoder);
-    mydata->copytofile = fdopen(mypipes->toencoder_w, "wb");
-
+    setupsegment(mydata, mypipes, encoder);
   }
   
   fclose(mydata->copytofile);
@@ -163,6 +156,16 @@ void convert_archive(char *encoder, FILE *offsetf)
           mydata->offset - startingoffset, cmpsize, filename);
   archive_read_finish(a);
   free(mydata);
+  free(mypipes);
+}
+
+void setupsegment(struct mydata *mydata, struct mypipes *pipes, char *encoder) {
+  initpipes(pipes);
+  forkencoder(pipes, encoder);
+  mydata->copytofile = fdopen(pipes->toencoder_w, "wb");
+  if (mydata->copytofile == NULL) {
+    errorexit("fdopen toencoder_w");
+  }
 }
 
 void initpipes(struct mypipes *pipes) {
