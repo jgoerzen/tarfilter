@@ -20,6 +20,8 @@ import System.Console.GetOpt
 import System.Console.GetOpt.Utils
 import System.Cmd.Utils
 import Utils
+import System.IO
+import qualified Data.ByteString.Lazy as BSL
 
 cmd = simpleCmd "cat"
       "Decode a Tarf-encoded tar file, output plain tar file" helptext
