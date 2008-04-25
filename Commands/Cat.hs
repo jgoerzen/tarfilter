@@ -22,15 +22,15 @@ import System.Cmd.Utils
 import Utils
 import System.IO
 import qualified Data.ByteString.Lazy as BSL
+import HSH
+import TarfIndex
 
 cmd = simpleCmd "cat"
       "Decode a Tarf-encoded tar file, output plain tar file" helptext
       [Option "d" ["decoder"] (ReqArg (stdRequired "d") "PROGRAM")
               "Program to use for decoding",
        Option "r" ["readindex"] (ReqArg (stdRequired "r") "FILE")
-              "Read non-incoded index for input from FILE",
-       Option "f" ["file"] (ReqArg (stdRequired "f") "FILE")
-              "Read the tarf-formatted tar file from FILE\nIf -f is not given, read from stdin"
+              "Read non-incoded index for input from FILE"
       ] 
       cmd_worker
 
@@ -41,9 +41,6 @@ cmd_worker (args, []) =
        indexfn <- case lookup "r" args of 
                     Just x -> return x
                     Nothing -> fail "tarf cat: --readindex required; see tarf decode --help"
-       tardatah <- case lookup "f" args of
-                     Just x -> openFile x ReadMode
-                     Nothing -> stdin
        
        tarindexstr <- readFile indexfn
        let tarindex' = parseIndex tarindexstr
@@ -51,38 +48,46 @@ cmd_worker (args, []) =
        let nullblock = last tarindex'
        let tarindex = init tarindex'
        
-       seekable <- hIsSeekable tardatah
+       seekable <- hIsSeekable stdin
        let seekfunc =
                case seekable of
                  True -> (\h -> hSeek h RelativeSeek)
-                 Fasle -> hSkip
+                 False -> hSkip
 
-       processTar decoder tardatah seekfunc (tarindex ++ [nullblock])
+       processTar decoder seekfunc (tarindex ++ [nullblock])
 
 cmd_worker _ =
     fail $ "Invalid arguments to cat; please see tarf cat --help"
 
-processTar :: String -> Handle -> (Integer -> IO ()) -> TarFile -> IO ()
-processTar decoder tardatah seekfunc tf = 
-    do (cmpoffset, offset) <- processTar' decoder tardatah seekfunc 0 0 tf
+hSkip :: Handle -> Integer -> IO ()
+hSkip _ 0 = return ()
+hSkip handle count = 
+    do r <- BSL.hGet handle ((fromIntegral) readAmt)
+       if BSL.null r
+          then fail $ "Trying to skip " ++ show count ++ " bytes, got EOF"
+          else hSkip handle (count - (fromIntegral)(BSL.length r))
+    where readAmt = min count 4096
+
+processTar :: String -> (Handle -> Integer -> IO ()) -> TarFile -> IO ()
+processTar decoder seekfunc tf = 
+    do (cmpoffset, offset) <- processTar' decoder seekfunc 0 0 tf
        -- Make sure we pad with nulls to next 10240-byte boundary
-       let neededPad = (fromImtegral) (offset `mod` 10240)
+       let neededPad = (fromIntegral) (offset `mod` 10240)
        let nulls = replicate neededPad 0
        BSL.putStr (BSL.pack nulls)
 
-processTar' :: String -> Handle -> (Integer -> IO ()) -> Integer -> Integer -> TarFile -> IO (Integer, Integer)
-processTar' _ _ _ cmpoffset offset [] = return (cmpoffset, offset)
-processTar' decoder tardatah seekfunc cmpoffset offset (te:xs) = 
+processTar' :: String -> (Handle -> Integer -> IO ()) -> Integer -> Integer -> TarFile -> IO (Integer, Integer)
+processTar' _ _ cmpoffset offset [] = return (cmpoffset, offset)
+processTar' decoder seekfunc cmpoffset offset (te:xs) = 
     do skipIt
-       runIO $ catBytesFrom 4096 tardatah
-                 (Just (cmpSize te)) -|- decoder
-       processTar' decoder tardatah seekfunc newCmpOffset newOffset xs
+       runIO $ catBytes 4096 (Just (cmpSize te)) -|- decoder
+       processTar' decoder seekfunc newCmpOffset newOffset xs
     where skipAmountCmp = cmpOff te - cmpoffset
           newCmpOffset = cmpoffset + skipAmountCmp + cmpSize te
           newOffset = offset + uncSize te
           skipIt 
               | skipAmountCmp == 0 = return ()
-              | otherwise = seekfunc skipAmountCmp
+              | otherwise = seekfunc stdin skipAmountCmp
 
 helptext = 
     "Usage: tarf cat -d cat -r /path/to/index -f file > tar\n\n\
