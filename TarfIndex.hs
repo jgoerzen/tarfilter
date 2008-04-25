@@ -17,6 +17,7 @@ Copyright (C) 2008 John Goerzen <jgoerzen@complete.org>
 
 module TarfIndex where
 import Text.ParserCombinators.Parsec
+import Text.Printf
 
 data TarEntry = 
    TarEntry {uncOff :: Integer,
@@ -45,8 +46,9 @@ formatEntry te =
 parseIndex :: String -> TarFile
 parseIndex str =
     let tarfile = do header
-                     many entry
+                     r <- many entry
                      eof
+                     return r
         header = do string magicHeader
                     eol
         eol = char '\n'
@@ -56,7 +58,7 @@ parseIndex str =
                    cmpsizes <- numericField
                    filename <- many1 (noneOf "\n")
                    eol
-                   return $ TarEntry {unCoff = read uncoffs,
+                   return $ TarEntry {uncOff = read uncoffs,
                                       cmpOff = read cmpoffs,
                                       uncSize = read uncsizes,
                                       cmpSize = read cmpsizes,
