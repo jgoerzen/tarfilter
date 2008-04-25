@@ -23,28 +23,38 @@ import Utils
 
 cmd = simpleCmd "encode"
       "Encode a plain tar file with the Tarf algorithm" helptext
-      [Option "e" ["encoder"] (ReqArg (stdRequired "e") "PROGRAM")
-              "Program to use for encoding",
-       Option "w" ["writeindex"] (ReqArg (stdRequired "w") "FILE")
-              "Write non-encoded index for output to FILE"
+      [Option "d" ["decoder"] (ReqArg (stdRequired "d") "PROGRAM")
+              "Program to use for decoding",
+       Option "r" ["readindex"] (ReqArg (stdRequired "r") "FILE")
+              "Read non-incoded index for input from FILE",
+       Option "f" ["file"] (ReqArg (stdRequired "f") "FILE")
+              "Read the tarf-formatted tar file from FILE\nIf -f is not given, read from stdin"
       ] 
       cmd_worker
 
 cmd_worker (args, []) =
-    do encoder <- case lookup "e" args of
+    do decoder <- case lookup "d" args of
                     Just x -> return x
-                    Nothing -> fail "encode: --encoder required; see tarf encode --help"
-       indexfn <- case lookup "w" args of 
+                    Nothing -> fail "decode: --decoder required; see tarf decode --help"
+       indexfn <- case lookup "r" args of 
                     Just x -> return x
-                    Nothing -> fail "encode: --writeindex required; see tarf encode --help"
+                    Nothing -> fail "decode: --readindex required; see tarf decode --help"
+       tardatah <- case lookup "f" args of
+                     Just x -> openFile x ReadMode
+                     Nothing -> stdin
+       
+       tarindexstr <- readFile indexfn
+       
        prog <- getProgram "tarf-encoder"
        safeSystem prog [encoder, indexfn]
 
 cmd_worker _ =
-    fail $ "Invalid arguments to encode; please see tarf encode --help"
+    fail $ "Invalid arguments to decode; please see tarf decode --help"
 
 helptext = 
-    "Usage: tarf encode -e encoder -w /path/to/index < tar > tarf\n\n\
+    "Usage: tarf decode -d decoder -r /path/to/index -f file > tar\n\n\
+\Read a tarf-formatted file from standard input.  Using the index given\n\
+\by -r
 \Read a tar file from standard input.  Encode using the given encoder\n\
 \into the tarf format.  Write the resulting tar file to stdout, and\n\
 \write an index to the file given by -w.\n"
