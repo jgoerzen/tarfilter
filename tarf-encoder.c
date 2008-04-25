@@ -35,11 +35,13 @@ int myclose(struct archive *a, void *client_data);
 ssize_t myread(struct archive *a, void *client_data, const void **buff);
 void checkblock(off_t offset);
 void errorexit(char *msg);
+void archiveerrorexit(struct archive *a, char *msg);
 int checkerror(char *msg, int code);
 void setupsegment(struct mydata *mydata, struct mypipes *pipes, char *encoder);
 void initpipes(struct mypipes *pipes);
 off_t closepipes(struct mypipes *pipes);
 void forkencoder(struct mypipes *pipes, char *encoder);
+
 
 int main(int argc, char **argv) {
   FILE *offsetf;
@@ -63,6 +65,11 @@ int main(int argc, char **argv) {
 void errorexit(char *msg) {
   perror(msg);
   exit(5);
+}
+
+void archiveerrorexit(struct archive *a, char *msg) {
+  fprintf(stderr, "%s: %s\n", msg, archive_error_string(a));
+  exit(15);
 }
   
 /* If code is < 0, print the given message and exit. */
@@ -91,6 +98,7 @@ void convert_archive(char *encoder, FILE *offsetf)
   off_t startingoffset, cmpsize;
   const void *tmpbuf;
   const char *filename;
+  int readresult;
 
   /* libarchive seems to read one block at open; special case this */
   int offsetcorrection = TARENC_BUFSIZE;
@@ -120,7 +128,9 @@ void convert_archive(char *encoder, FILE *offsetf)
     checkblock(mydata->offset);
     startingoffset = mydata->offset - offsetcorrection;
 
-    if (archive_read_next_header(a, &entry) != ARCHIVE_OK) {
+    readresult = archive_read_next_header(a, &entry);
+
+    if (readresult == ARCHIVE_EOF) {
       filename = "** Block of NULs **";
       while (myread(a, mydata, &tmpbuf)) {};
       /*
@@ -128,6 +138,10 @@ void convert_archive(char *encoder, FILE *offsetf)
              (mydata->offset - offsetcorrection - startingoffset / TARENC_BUFSIZE));
              } */
       break;
+    }
+
+    if (readresult != ARCHIVE_OK) {
+      archiveerrorexit(a, "Error reading header");
     }
     filename = archive_entry_pathname(entry);
     /*
@@ -139,7 +153,9 @@ void convert_archive(char *encoder, FILE *offsetf)
     checkblock(mydata->offset);
     // startingoffset = mydata->offset;
 
-    archive_read_data_skip(a);
+    if (archive_read_data_skip(a) != ARCHIVE_OK) {
+      archiveerrorexit(a, "Error reading data");
+    }
     //printf(", + data blocks: %" PRId64 "\n", (mydata->offset - startingoffset) / TARENC_BUFSIZE);
     checkblock(mydata->offset);
 
