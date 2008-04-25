@@ -22,6 +22,7 @@ import System.Environment
 import HSH
 import System.Path
 import System.Posix.Files(createNamedPipe)
+import System.Directory(getTemporaryDirectory)
 
 data Command =
              Command {cmdname :: String,
@@ -61,8 +62,9 @@ getProgram x =
 
 bracketFIFO :: String -> (String -> IO a) -> IO a
 bracketFIFO pattern func =
-    brackettmpdir pattern fifofunc
-    where fifofunc dirname =
-              let fifoname = dirname ++ "/" ++ "fifo"
+    do tmpdir <- getTemporaryDirectory
+       brackettmpdir (tmpdir ++ "/" ++ pattern) fifofunc
+    where fifofunc tmpdirname =
+              let fifoname = tmpdirname ++ "/" ++ "fifo"
                   in do createNamedPipe fifoname 0o600
                         func fifoname

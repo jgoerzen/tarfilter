@@ -21,6 +21,7 @@ import System.Console.GetOpt.Utils
 import System.Cmd.Utils
 import Utils
 import HSH
+import System.IO
 
 cmd = simpleCmd "scan"
       "Read a plain tar file and produce an index file for it" helptext
@@ -28,8 +29,10 @@ cmd = simpleCmd "scan"
       cmd_worker
 
 cmd_worker ([], []) = bracketFIFO "tarf-scan.XXXXXX" $ \fifoname ->
-    do progname <- getProgram "tarf-encoder"
-       runIO $ ("tarf-encoder", ["cat", fifoname]) -|-
+    do hSetBuffering stdin (BlockBuffering (Just 10240))
+       hSetBuffering stdout LineBuffering
+       progname <- getProgram "tarf-encoder"
+       runIO $ (progname, ["cat", fifoname]) -|-
                discard -|- catFromBS [fifoname]
 
 cmd_worker _ =
